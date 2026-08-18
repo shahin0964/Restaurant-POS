@@ -37,7 +37,7 @@ jobs:
           if [ -z "$REQ_VER" ]; then
             REQ_VER="9.3.1"
           fi
-          echo "REQUIRED_GRADLE_VERSION=${REQ_VER}" >> $GITHUB_OUTPUT
+          echo "REQUIRED_GRADLE_VERSION=${REQ_VER}" >> "$GITHUB_OUTPUT"
           echo "Project requires Gradle version: ${REQ_VER}"
 
       # 4. INSTALL STANDALONE GRADLE DISTRIBUTION DIRECTLY
@@ -92,23 +92,98 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           set -euo pipefail
+
           echo "Setting up release signing keystore..."
-          if [ -n "${KEYSTORE_BASE64:-}" ]; then
-            CLEANED_BASE64=$(echo "$KEYSTORE_BASE64" | tr -d '\r\n\t ')
-            if echo "$CLEANED_BASE64" | base64 --decode > my-upload-key.jks 2>/dev/null && [ -s my-upload-key.jks ]; then
-              echo "Keystore decoded successfully."
-            else
-              echo "::error::KEYSTORE_BASE64 is present but could not be decoded into a valid keystore file!"
-              exit 1
-            fi
-          elif [ -f "my-upload-key.jks" ]; then
-            echo "Using existing repository keystore file."
+
+          KEYSTORE_PATH="${GITHUB_WORKSPACE}/restaurant-pos.jks"
+
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::error::KEYSTORE_BASE64 GitHub Secret is missing!"
+            exit 1
+          fi
+
+          if [ -z "${KEYSTORE_PASSWORD:-}" ]; then
+            echo "::error::KEYSTORE_PASSWORD GitHub Secret is missing!"
+            exit 1
+          fi
+
+          if [ -z "${KEY_PASSWORD:-}" ]; then
+            echo "::error::KEY_PASSWORD GitHub Secret is missing!"
+            exit 1
+          fi
+
+          if [ -z "${KEY_ALIAS:-}" ]; then
+            echo "::error::KEY_ALIAS GitHub Secret is missing!"
+            exit 1
+          fi
+
+          # Remove only whitespace characters that may have been introduced
+          # when copying the Base64 value into GitHub Secrets.
+          CLEANED_BASE64="$(printf '%s' "$KEYSTORE_BASE64" | tr -d '\r\n\t ')"
+
+          if [ -z "$CLEANED_BASE64" ]; then
+            echo "::error::KEYSTORE_BASE64 is empty after cleanup!"
+            exit 1
+          fi
+
+          # Decode Base64 into the workspace using a temporary file.
+          if ! printf '%s' "$CLEANED_BASE64" | base64 --decode > "$KEYSTORE_PATH" 2>/dev/null; then
+            echo "::error::KEYSTORE_BASE64 could not be Base64-decoded!"
+            rm -f "$KEYSTORE_PATH"
+            exit 1
+          fi
+
+          if [ ! -s "$KEYSTORE_PATH" ]; then
+            echo "::error::Decoded keystore file is empty!"
+            rm -f "$KEYSTORE_PATH"
+            exit 1
+          fi
+
+          echo "Keystore Base64 decoded successfully."
+
+          # Verify that the decoded file is an actual readable keystore
+          # and that the requested alias exists.
+          if ! keytool \
+            -list \
+            -keystore "$KEYSTORE_PATH" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" \
+            > /dev/null 2>&1; then
+
+            echo "::error::Decoded keystore is invalid, the password is incorrect, or KEY_ALIAS does not exist!"
+            rm -f "$KEYSTORE_PATH"
+            exit 1
+          fi
+
+          echo "Keystore and alias verification successful."
+
+          # Export the exact absolute path for later workflow steps.
+          echo "KEYSTORE_PATH=${KEYSTORE_PATH}" >> "$GITHUB_ENV"
+
+      # 9.5 PREPARE GOOGLE SERVICES
+      - name: Prepare Google Services
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          GOOGLE_SERVICES_BASE64: ${{ secrets.GOOGLE_SERVICES_BASE64 }}
+        run: |
+          set -euo pipefail
+
+          if [ -f "app/google-services.json" ]; then
+            echo "google-services.json already exists in the repository."
+          elif [ -n "${GOOGLE_SERVICES_JSON:-}" ]; then
+            echo "Restoring google-services.json from GOOGLE_SERVICES_JSON secret..."
+            printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
+          elif [ -n "${GOOGLE_SERVICES_BASE64:-}" ]; then
+            echo "Restoring google-services.json from GOOGLE_SERVICES_BASE64 secret..."
+            printf '%s' "$GOOGLE_SERVICES_BASE64" | base64 --decode > app/google-services.json
           else
-            echo "::warning::No KEYSTORE_BASE64 secret provided and no local my-upload-key.jks found."
+            echo "::error::File google-services.json is missing, and neither GOOGLE_SERVICES_JSON nor GOOGLE_SERVICES_BASE64 secret is provided!"
+            echo "::error::Please add the required Firebase configuration secret to GitHub Actions."
+            exit 1
           fi
 
       # 10. DETERMINE APP VERSION & TAG
@@ -117,51 +192,72 @@ jobs:
         run: |
           set -euo pipefail
           VERSION_NAME=$(grep -E 'versionName\s*=' app/build.gradle.kts | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
+
           if [ -z "$VERSION_NAME" ]; then
             VERSION_NAME="1.0.0"
           fi
 
           TAG_NAME="v${VERSION_NAME}"
+
           if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
             TAG_NAME="v${VERSION_NAME}.${GITHUB_RUN_NUMBER}"
           fi
 
-          echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_OUTPUT
-          echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_OUTPUT
+          echo "VERSION_NAME=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
+          echo "TAG_NAME=${TAG_NAME}" >> "$GITHUB_OUTPUT"
           echo "Resolved App Version: ${VERSION_NAME}"
           echo "Resolved Release Tag: ${TAG_NAME}"
 
-      # 11. BUILD PRODUCTION RELEASE APK (CLEAN & ASSEMBLE)
+      # 11. BUILD PRODUCTION RELEASE APK
       - name: Build Release APK
         env:
-          KEYSTORE_PATH: my-upload-key.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           set -euo pipefail
-          STORE_PASS="${STORE_PASSWORD:-${KEYSTORE_PASSWORD:-}}"
-          ALIAS_VAL="${KEY_ALIAS:-upload}"
-          
+
+          if [ -z "${KEYSTORE_PATH:-}" ] || [ ! -f "$KEYSTORE_PATH" ]; then
+            echo "::error::Release keystore was not found at the expected workspace path!"
+            exit 1
+          fi
+
+          if [ -z "${KEYSTORE_PASSWORD:-}" ]; then
+            echo "::error::KEYSTORE_PASSWORD is missing!"
+            exit 1
+          fi
+
+          if [ -z "${KEY_PASSWORD:-}" ]; then
+            echo "::error::KEY_PASSWORD is missing!"
+            exit 1
+          fi
+
+          if [ -z "${KEY_ALIAS:-}" ]; then
+            echo "::error::KEY_ALIAS is missing!"
+            exit 1
+          fi
+
           echo "Running ./gradlew clean..."
           ./gradlew clean
 
           echo "Building production release APK..."
+
           ./gradlew assembleRelease \
-            -Pandroid.injected.signing.store.file=my-upload-key.jks \
-            -Pandroid.injected.signing.store.password="${STORE_PASS}" \
-            -Pandroid.injected.signing.key.alias="${ALIAS_VAL}" \
-            -Pandroid.injected.signing.key.password="${KEY_PASSWORD:-}"
+            -Pandroid.injected.signing.store.file="$KEYSTORE_PATH" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
 
       # 12. LOCATE, VERIFY, AND PROCESS APK
       - name: Verify and Process APK
         id: process_apk
         run: |
           set -euo pipefail
+
           VERSION_NAME="${{ steps.version.outputs.VERSION_NAME }}"
-          
+
           echo "Locating generated release APK..."
+
           APK_PATH=$(find app/build/outputs/apk -type f -name "*.apk" | head -n 1 || true)
 
           if [ -z "$APK_PATH" ] || [ ! -f "$APK_PATH" ]; then
@@ -175,9 +271,10 @@ jobs:
           fi
 
           DEST_APK="Dynamic-Restaurant-POS-v${VERSION_NAME}.apk"
+
           cp "$APK_PATH" "$DEST_APK"
 
-          echo "APK_PATH=${DEST_APK}" >> $GITHUB_OUTPUT
+          echo "APK_PATH=${DEST_APK}" >> "$GITHUB_OUTPUT"
           echo "Successfully verified release APK at: ${DEST_APK}"
 
       # 13. UPLOAD APK ARTIFACT
@@ -201,4 +298,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
