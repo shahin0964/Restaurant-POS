@@ -210,7 +210,35 @@ class PrinterRepository(
             val items = orderWithItems.items
             val is80mm = paperSize == "80mm"
             val lineLength = if (is80mm) 48 else 32
-            val currSymbol = if (receiptSetting.currencySymbol.isNotBlank()) receiptSetting.currencySymbol else if (receiptSetting.currencyCode.isNotBlank()) receiptSetting.currencyCode else "BDT"
+
+            val rawSymbol = if (receiptSetting.currencySymbol.isNotBlank()) {
+                receiptSetting.currencySymbol
+            } else if (receiptSetting.currencyCode.isNotBlank()) {
+                receiptSetting.currencyCode
+            } else {
+                "BDT"
+            }
+
+            // ESC/POS Thermal printers in standard single-byte code page mode corrupt non-ASCII characters like "৳" into Chinese characters like "唰".
+            // Converting non-ASCII currency symbols to clean printer-safe ASCII string (e.g. "Tk") ensures 100% clean formatting and crisp printing.
+            val currSymbol = when {
+                rawSymbol == "৳" || rawSymbol.contains("\u09F3") -> "Tk"
+                rawSymbol.all { it.code in 32..126 } -> rawSymbol
+                else -> "Tk"
+            }
+
+            fun formatAmount(amount: Double): String {
+                return if (amount % 1.0 == 0.0) {
+                    String.format(Locale.US, "%.0f", amount)
+                } else {
+                    String.format(Locale.US, "%.2f", amount)
+                }
+            }
+
+            fun formatMoney(amount: Double): String {
+                val amtStr = formatAmount(amount)
+                return if (currSymbol.isNotBlank()) "$currSymbol $amtStr" else amtStr
+            }
 
             // ESC/POS Init
             stream.write(byteArrayOf(0x1B, 0x40))
@@ -220,9 +248,9 @@ class PrinterRepository(
 
             // Shop Header
             if (receiptSetting.showShopName && receiptSetting.shopName.isNotBlank()) {
-                stream.write(byteArrayOf(0x1D, 0x21, 0x11))
+                stream.write(byteArrayOf(0x1D, 0x21, 0x11)) // Double height & width
                 stream.write("${receiptSetting.shopName}\n".toByteArray(Charsets.UTF_8))
-                stream.write(byteArrayOf(0x1D, 0x21, 0x00))
+                stream.write(byteArrayOf(0x1D, 0x21, 0x00)) // Normal size
             }
 
             if (receiptSetting.showPhone && receiptSetting.phone.isNotBlank()) {
@@ -249,63 +277,57 @@ class PrinterRepository(
             // Left Align for Order Details
             stream.write(byteArrayOf(0x1B, 0x61, 0x00))
             
-            if (receiptSetting.showOrderNumber) {
-                stream.write("Order No: ${order.orderNumber}\n".toByteArray(Charsets.UTF_8))
+            if (receiptSetting.showOrderNumber && order.orderNumber.isNotBlank()) {
+                val formattedOrderNo = if (order.orderNumber.startsWith("#")) order.orderNumber else "#${order.orderNumber}"
+                stream.write("Order No: $formattedOrderNo\n".toByteArray(Charsets.UTF_8))
             }
-            
-            if (receiptSetting.showOrderType) {
+
+            if (receiptSetting.showCustomerName && order.customerName.isNotBlank()) {
+                stream.write("Customer: ${order.customerName}\n".toByteArray(Charsets.UTF_8))
+            }
+
+            if (receiptSetting.showOrderType && order.orderType.isNotBlank()) {
                 stream.write("Type    : ${order.orderType}\n".toByteArray(Charsets.UTF_8))
                 if (order.tableNumber.isNotBlank()) {
                     stream.write("Table   : ${order.tableNumber}\n".toByteArray(Charsets.UTF_8))
                 }
             }
-            if (receiptSetting.showCustomerName && order.customerName.isNotBlank()) {
-                stream.write("Customer: ${order.customerName}\n".toByteArray(Charsets.UTF_8))
-            }
-            if (receiptSetting.showDateTime) {
-                val dateStr = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(Date(order.timestamp))
+
+            if (receiptSetting.showDateTime && order.timestamp > 0) {
+                val dateStr = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.US).format(Date(order.timestamp))
                 stream.write("Time    : $dateStr\n".toByteArray(Charsets.UTF_8))
             }
+
             if (order.note.isNotBlank()) {
                 stream.write("Note    : ${order.note}\n".toByteArray(Charsets.UTF_8))
             }
+
             stream.write(subDivider.toByteArray(Charsets.UTF_8))
 
             // Items List
-            if (receiptSetting.showItems) {
+            if (receiptSetting.showItems && items.isNotEmpty()) {
                 if (is80mm) {
-                    stream.write(String.format("%-28s %5s %13s\n", "Item Description", "Qty", "Total").toByteArray(Charsets.UTF_8))
+                    stream.write(String.format(Locale.US, "%-28s %5s %13s\n", "Item Description", "Qty", "Total").toByteArray(Charsets.UTF_8))
                 } else {
-                    stream.write(String.format("%-18s %4s %8s\n", "Item", "Qty", "Total").toByteArray(Charsets.UTF_8))
+                    stream.write(String.format(Locale.US, "%-18s %4s %8s\n", "Item", "Qty", "Total").toByteArray(Charsets.UTF_8))
                 }
                 stream.write(subDivider.toByteArray(Charsets.UTF_8))
 
                 for (item in items) {
                     val priceVal = item.pricePerUnit * item.quantity
+                    val unitPriceStr = formatMoney(item.pricePerUnit)
+                    val totalStr = formatMoney(priceVal)
                     val itemName = item.menuItemName
-                    val qtyStr = "${item.quantity}"
-                    val totalStr = String.format(Locale.US, "%s%.2f", currSymbol, priceVal)
 
-                    if (is80mm) {
-                        if (itemName.length <= 26) {
-                            val line = String.format(Locale.US, "%-26s %5s %15s\n", itemName, qtyStr, totalStr)
-                            stream.write(line.toByteArray(Charsets.UTF_8))
-                        } else {
-                            stream.write("$itemName\n".toByteArray(Charsets.UTF_8))
-                            val line2 = String.format(Locale.US, "  (%s x %s%.2f)%15s %15s\n", qtyStr, currSymbol, item.pricePerUnit, "", totalStr)
-                            stream.write(line2.toByteArray(Charsets.UTF_8))
-                        }
-                    } else {
-                        if (itemName.length <= 16) {
-                            val line = String.format(Locale.US, "%-16s %4s %10s\n", itemName, qtyStr, totalStr)
-                            stream.write(line.toByteArray(Charsets.UTF_8))
-                        } else {
-                            stream.write("$itemName\n".toByteArray(Charsets.UTF_8))
-                            val priceInfo = "  ${qtyStr}x$currSymbol${String.format(Locale.US, "%.2f", item.pricePerUnit)}"
-                            val line2 = String.format(Locale.US, "%-20s%12s\n", priceInfo, totalStr)
-                            stream.write(line2.toByteArray(Charsets.UTF_8))
-                        }
-                    }
+                    // Print Item Name
+                    stream.write("$itemName\n".toByteArray(Charsets.UTF_8))
+
+                    // Print Quantity x Unit Price and Item Total aligned
+                    val qtyPriceStr = "  ${item.quantity} x $unitPriceStr"
+                    val remainingSpace = (lineLength - qtyPriceStr.length - totalStr.length).coerceAtLeast(1)
+                    val spaces = " ".repeat(remainingSpace)
+                    val detailLine = "$qtyPriceStr$spaces$totalStr\n"
+                    stream.write(detailLine.toByteArray(Charsets.UTF_8))
 
                     if (item.note.isNotBlank()) {
                         stream.write("  Note: ${item.note}\n".toByteArray(Charsets.UTF_8))
@@ -314,39 +336,54 @@ class PrinterRepository(
                 stream.write(subDivider.toByteArray(Charsets.UTF_8))
             }
 
-            // Totals
-            val labelCol = if (is80mm) 32 else 18
-            val fmtStr = "%-${labelCol}s %s%8.2f\n"
-            
+            // Totals Section
+            val labelCol = if (is80mm) 28 else 18
+            val valCol = lineLength - labelCol
+
+            fun writeSummaryRow(label: String, value: String, isBold: Boolean = false) {
+                if (isBold) {
+                    stream.write(byteArrayOf(0x1B, 0x45, 0x01)) // Bold ON
+                }
+                val rowStr = String.format(Locale.US, "%-${labelCol}s %${valCol - 1}s\n", label, value)
+                stream.write(rowStr.toByteArray(Charsets.UTF_8))
+                if (isBold) {
+                    stream.write(byteArrayOf(0x1B, 0x45, 0x00)) // Bold OFF
+                }
+            }
+
             if (receiptSetting.showSubtotal) {
-                stream.write(String.format(Locale.US, fmtStr, "Subtotal:", currSymbol, order.subtotal).toByteArray(Charsets.UTF_8))
+                writeSummaryRow("Subtotal:", formatMoney(order.subtotal))
             }
-            
+
             if (receiptSetting.showDiscount && order.discount > 0) {
-                stream.write(String.format(Locale.US, fmtStr, "Discount:", currSymbol, order.discount).toByteArray(Charsets.UTF_8))
+                writeSummaryRow("Discount:", formatMoney(order.discount))
             }
+
             if (receiptSetting.showTax && order.tax > 0) {
-                stream.write(String.format(Locale.US, fmtStr, "Tax:", currSymbol, order.tax).toByteArray(Charsets.UTF_8))
+                writeSummaryRow("Tax:", formatMoney(order.tax))
             }
-            
-            // Bold Total
+
             if (receiptSetting.showTotal) {
-                stream.write(byteArrayOf(0x1B, 0x45, 0x01))
-                stream.write(String.format(Locale.US, fmtStr, "TOTAL:", currSymbol, order.total).toByteArray(Charsets.UTF_8))
-                stream.write(byteArrayOf(0x1B, 0x45, 0x00))
+                writeSummaryRow("TOTAL:", formatMoney(order.total), isBold = true)
             }
-            
-            stream.write("Payment : ${order.paymentMethod}\n".toByteArray(Charsets.UTF_8))
+
+            writeSummaryRow("Payment Method:", if (order.paymentMethod.isNotBlank()) order.paymentMethod else "Cash")
+
             if (receiptSetting.showPaymentStatus) {
-                val statusStr = if (order.isPaid) "PAID" else "UNPAID (${order.status})"
-                stream.write("Status  : $statusStr\n".toByteArray(Charsets.UTF_8))
+                val paymentStatusStr = when {
+                    order.isPaid -> "Paid"
+                    order.status.equals("Completed", ignoreCase = true) -> "Paid"
+                    order.status.equals("Cancelled", ignoreCase = true) -> "Cancelled"
+                    else -> "Unpaid"
+                }
+                writeSummaryRow("Payment Status:", paymentStatusStr)
             }
-            
+
             stream.write(topDivider.toByteArray(Charsets.UTF_8))
 
             // Footer
             if (receiptSetting.showFooter && receiptSetting.footerText.isNotBlank()) {
-                stream.write(byteArrayOf(0x1B, 0x61, 0x01))
+                stream.write(byteArrayOf(0x1B, 0x61, 0x01)) // Center align
                 stream.write("${receiptSetting.footerText}\n".toByteArray(Charsets.UTF_8))
             }
 
