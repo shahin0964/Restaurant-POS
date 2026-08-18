@@ -23,7 +23,7 @@ jobs:
 
       # 2. SET UP JAVA JDK 21
       - name: Set up Java JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
           java-version: '21'
