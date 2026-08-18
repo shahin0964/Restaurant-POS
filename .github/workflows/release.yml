@@ -36,6 +36,7 @@ jobs:
       - name: Prepare Keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
@@ -76,21 +77,23 @@ jobs:
       # 6. REPAIR GRADLE WRAPPER
       - name: Prepare Gradle Wrapper
         run: |
-          chmod +x gradlew || true
-          sed -i -e 's/\r$//' gradlew || true
+          chmod +x ./gradlew
+          sed -i -e 's/\r$//' ./gradlew || true
 
       # 7. BUILD PRODUCTION RELEASE APK
       - name: Build Release APK
         env:
           KEYSTORE_PATH: my-upload-key.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
+          STORE_PASS="${STORE_PASSWORD:-${KEYSTORE_PASSWORD}}"
           ALIAS_VAL="${KEY_ALIAS:-upload}"
-          ./gradlew :app:assembleRelease \
+          ./gradlew assembleRelease \
             -Pandroid.injected.signing.store.file=my-upload-key.jks \
-            -Pandroid.injected.signing.store.password="${STORE_PASSWORD}" \
+            -Pandroid.injected.signing.store.password="${STORE_PASS}" \
             -Pandroid.injected.signing.key.alias="${ALIAS_VAL}" \
             -Pandroid.injected.signing.key.password="${KEY_PASSWORD}"
 
