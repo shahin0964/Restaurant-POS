@@ -233,6 +233,14 @@ class PrinterRepository(
                 stream.write("${receiptSetting.address}\n".toByteArray(Charsets.UTF_8))
             }
 
+            if (receiptSetting.email.isNotBlank()) {
+                stream.write("Email: ${receiptSetting.email}\n".toByteArray(Charsets.UTF_8))
+            }
+
+            if (receiptSetting.website.isNotBlank()) {
+                stream.write("${receiptSetting.website}\n".toByteArray(Charsets.UTF_8))
+            }
+
             val topDivider = "=".repeat(lineLength) + "\n"
             val subDivider = "-".repeat(lineLength) + "\n"
 
@@ -241,11 +249,13 @@ class PrinterRepository(
             // Left Align for Order Details
             stream.write(byteArrayOf(0x1B, 0x61, 0x00))
             
-            stream.write("Order No: ${order.orderNumber}\n".toByteArray(Charsets.UTF_8))
+            if (receiptSetting.showOrderNumber) {
+                stream.write("Order No: ${order.orderNumber}\n".toByteArray(Charsets.UTF_8))
+            }
             
             if (receiptSetting.showOrderType) {
                 stream.write("Type    : ${order.orderType}\n".toByteArray(Charsets.UTF_8))
-                if (order.tableNumber != null && order.tableNumber.isNotBlank()) {
+                if (order.tableNumber.isNotBlank()) {
                     stream.write("Table   : ${order.tableNumber}\n".toByteArray(Charsets.UTF_8))
                 }
             }
@@ -256,65 +266,94 @@ class PrinterRepository(
                 val dateStr = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(Date(order.timestamp))
                 stream.write("Time    : $dateStr\n".toByteArray(Charsets.UTF_8))
             }
+            if (order.note.isNotBlank()) {
+                stream.write("Note    : ${order.note}\n".toByteArray(Charsets.UTF_8))
+            }
             stream.write(subDivider.toByteArray(Charsets.UTF_8))
 
             // Items List
-            
-            if (is80mm) {
-                stream.write(String.format("%-26s %4s %14s\n", "Item", "Qty", "Price").toByteArray(Charsets.UTF_8))
-            } else {
-                stream.write(String.format("%-16s %3s %9s\n", "Item", "Qty", "Price").toByteArray(Charsets.UTF_8))
-            }
-            stream.write(subDivider.toByteArray(Charsets.UTF_8))
-
-            for (item in items) {
-                val maxNameLen = if (is80mm) 26 else 16
-                val nameTrunc = if (item.menuItemName.length > maxNameLen) item.menuItemName.substring(0, maxNameLen) else item.menuItemName
-                val qtyStr = "${item.quantity}"
-                val priceVal = item.pricePerUnit * item.quantity
-
-                val line = if (is80mm) {
-                    String.format(Locale.US, "%-26s %4s %s%10.2f\n", nameTrunc, qtyStr, currSymbol, priceVal)
+            if (receiptSetting.showItems) {
+                if (is80mm) {
+                    stream.write(String.format("%-28s %5s %13s\n", "Item Description", "Qty", "Total").toByteArray(Charsets.UTF_8))
                 } else {
-                    String.format(Locale.US, "%-16s %3s %s%7.2f\n", nameTrunc, qtyStr, currSymbol, priceVal)
+                    stream.write(String.format("%-18s %4s %8s\n", "Item", "Qty", "Total").toByteArray(Charsets.UTF_8))
                 }
-                stream.write(line.toByteArray(Charsets.UTF_8))
+                stream.write(subDivider.toByteArray(Charsets.UTF_8))
+
+                for (item in items) {
+                    val priceVal = item.pricePerUnit * item.quantity
+                    val itemName = item.menuItemName
+                    val qtyStr = "${item.quantity}"
+                    val totalStr = String.format(Locale.US, "%s%.2f", currSymbol, priceVal)
+
+                    if (is80mm) {
+                        if (itemName.length <= 26) {
+                            val line = String.format(Locale.US, "%-26s %5s %15s\n", itemName, qtyStr, totalStr)
+                            stream.write(line.toByteArray(Charsets.UTF_8))
+                        } else {
+                            stream.write("$itemName\n".toByteArray(Charsets.UTF_8))
+                            val line2 = String.format(Locale.US, "  (%s x %s%.2f)%15s %15s\n", qtyStr, currSymbol, item.pricePerUnit, "", totalStr)
+                            stream.write(line2.toByteArray(Charsets.UTF_8))
+                        }
+                    } else {
+                        if (itemName.length <= 16) {
+                            val line = String.format(Locale.US, "%-16s %4s %10s\n", itemName, qtyStr, totalStr)
+                            stream.write(line.toByteArray(Charsets.UTF_8))
+                        } else {
+                            stream.write("$itemName\n".toByteArray(Charsets.UTF_8))
+                            val priceInfo = "  ${qtyStr}x$currSymbol${String.format(Locale.US, "%.2f", item.pricePerUnit)}"
+                            val line2 = String.format(Locale.US, "%-20s%12s\n", priceInfo, totalStr)
+                            stream.write(line2.toByteArray(Charsets.UTF_8))
+                        }
+                    }
+
+                    if (item.note.isNotBlank()) {
+                        stream.write("  Note: ${item.note}\n".toByteArray(Charsets.UTF_8))
+                    }
+                }
+                stream.write(subDivider.toByteArray(Charsets.UTF_8))
             }
-            stream.write(subDivider.toByteArray(Charsets.UTF_8))
-            
 
             // Totals
             val labelCol = if (is80mm) 32 else 18
             val fmtStr = "%-${labelCol}s %s%8.2f\n"
             
-            stream.write(String.format(Locale.US, fmtStr, "Subtotal:", currSymbol, order.subtotal).toByteArray(Charsets.UTF_8))
+            if (receiptSetting.showSubtotal) {
+                stream.write(String.format(Locale.US, fmtStr, "Subtotal:", currSymbol, order.subtotal).toByteArray(Charsets.UTF_8))
+            }
             
-            if (order.discount > 0) {
+            if (receiptSetting.showDiscount && order.discount > 0) {
                 stream.write(String.format(Locale.US, fmtStr, "Discount:", currSymbol, order.discount).toByteArray(Charsets.UTF_8))
             }
-            if (order.tax > 0) {
+            if (receiptSetting.showTax && order.tax > 0) {
                 stream.write(String.format(Locale.US, fmtStr, "Tax:", currSymbol, order.tax).toByteArray(Charsets.UTF_8))
             }
             
             // Bold Total
-            stream.write(byteArrayOf(0x1B, 0x45, 0x01))
-            stream.write(String.format(Locale.US, fmtStr, "TOTAL:", currSymbol, order.total).toByteArray(Charsets.UTF_8))
-            stream.write(byteArrayOf(0x1B, 0x45, 0x00))
-            
+            if (receiptSetting.showTotal) {
+                stream.write(byteArrayOf(0x1B, 0x45, 0x01))
+                stream.write(String.format(Locale.US, fmtStr, "TOTAL:", currSymbol, order.total).toByteArray(Charsets.UTF_8))
+                stream.write(byteArrayOf(0x1B, 0x45, 0x00))
+            }
             
             stream.write("Payment : ${order.paymentMethod}\n".toByteArray(Charsets.UTF_8))
+            if (receiptSetting.showPaymentStatus) {
+                val statusStr = if (order.isPaid) "PAID" else "UNPAID (${order.status})"
+                stream.write("Status  : $statusStr\n".toByteArray(Charsets.UTF_8))
+            }
             
             stream.write(topDivider.toByteArray(Charsets.UTF_8))
 
             // Footer
             if (receiptSetting.showFooter && receiptSetting.footerText.isNotBlank()) {
                 stream.write(byteArrayOf(0x1B, 0x61, 0x01))
-                stream.write("${receiptSetting.footerText}\n\n\n\n".toByteArray(Charsets.UTF_8))
-            } else {
-                stream.write("\n\n\n\n".toByteArray(Charsets.UTF_8))
+                stream.write("${receiptSetting.footerText}\n".toByteArray(Charsets.UTF_8))
             }
 
-            // Cut Paper
+            // Line feeds so cut occurs cleanly after footer
+            stream.write("\n\n\n\n\n\n".toByteArray(Charsets.UTF_8))
+
+            // Cut Paper Command
             stream.write(byteArrayOf(0x1D, 0x56, 0x41, 0x00))
         } catch (e: Exception) {
             Log.e("PrinterRepository", "Error formatting receipt bytes", e)
@@ -618,11 +657,20 @@ class PrinterRepository(
             return try {
                 socket.connect()
                 val os: OutputStream = socket.outputStream
-                os.write(bytes)
-                os.flush()
-                Thread.sleep(500)
-                os.close()
-                socket.close()
+
+                val chunkSize = 128
+                var offset = 0
+                while (offset < bytes.size) {
+                    val count = minOf(chunkSize, bytes.size - offset)
+                    os.write(bytes, offset, count)
+                    os.flush()
+                    offset += count
+                    Thread.sleep(30)
+                }
+
+                Thread.sleep(400)
+                try { os.close() } catch (_: Exception) {}
+                try { socket.close() } catch (_: Exception) {}
                 PrintResult(true, "Printed successfully via Bluetooth (${device.name ?: macAddress})")
             } catch (e: SecurityException) {
                 PrintResult(false, "Bluetooth permission denied during connection")
@@ -648,11 +696,20 @@ class PrinterRepository(
             val socket = Socket()
             socket.connect(InetSocketAddress(ipAddress, targetPort), 5000)
             val os: OutputStream = socket.outputStream
-            os.write(bytes)
-            os.flush()
+
+            val chunkSize = 512
+            var offset = 0
+            while (offset < bytes.size) {
+                val count = minOf(chunkSize, bytes.size - offset)
+                os.write(bytes, offset, count)
+                os.flush()
+                offset += count
+                Thread.sleep(20)
+            }
+
             Thread.sleep(300)
-            os.close()
-            socket.close()
+            try { os.close() } catch (_: Exception) {}
+            try { socket.close() } catch (_: Exception) {}
             PrintResult(true, "Printed successfully via Wi-Fi ($ipAddress:$targetPort)")
         } catch (e: SocketTimeoutException) {
             PrintResult(false, "Connection timeout to Wi-Fi printer at $ipAddress:$targetPort")
@@ -708,17 +765,35 @@ class PrinterRepository(
 
         return try {
             connection.claimInterface(usbInterface, true)
-            val bytesTransferred = connection.bulkTransfer(endpoint, bytes, bytes.size, 5000)
-            connection.releaseInterface(usbInterface)
-            connection.close()
 
-            if (bytesTransferred >= 0) {
+            val maxPacket = endpoint.maxPacketSize.coerceAtLeast(64)
+            val chunkSize = minOf(maxPacket, 512)
+            var offset = 0
+            var totalSent = 0
+            var failed = false
+
+            while (offset < bytes.size) {
+                val length = minOf(chunkSize, bytes.size - offset)
+                val chunk = bytes.copyOfRange(offset, offset + length)
+                val transferred = connection.bulkTransfer(endpoint, chunk, length, 3000)
+                if (transferred < 0) {
+                    failed = true
+                    break
+                }
+                totalSent += transferred
+                offset += length
+            }
+
+            try { connection.releaseInterface(usbInterface) } catch (_: Exception) {}
+            try { connection.close() } catch (_: Exception) {}
+
+            if (!failed && totalSent > 0) {
                 PrintResult(true, "Printed successfully via USB (${targetDevice.productName ?: targetDevice.deviceName})")
             } else {
                 PrintResult(false, "USB printer rejected data transfer")
             }
         } catch (e: Exception) {
-            connection.close()
+            try { connection.close() } catch (_: Exception) {}
             PrintResult(false, "USB print failed: ${e.message ?: "Transfer error"}")
         }
     }
