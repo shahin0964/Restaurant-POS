@@ -92,6 +92,7 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
@@ -105,9 +106,10 @@ jobs:
             echo "::error::KEYSTORE_BASE64 GitHub Secret is missing!"
             exit 1
           fi
-
-          if [ -z "${KEYSTORE_PASSWORD:-}" ]; then
-            echo "::error::KEYSTORE_PASSWORD GitHub Secret is missing!"
+          
+          STORE_PASS="${STORE_PASSWORD:-${KEYSTORE_PASSWORD:-}}"
+          if [ -z "$STORE_PASS" ]; then
+            echo "::error::KEYSTORE_PASSWORD or STORE_PASSWORD GitHub Secret is missing!"
             exit 1
           fi
 
@@ -150,7 +152,7 @@ jobs:
           if ! keytool \
             -list \
             -keystore "$KEYSTORE_PATH" \
-            -storepass "$KEYSTORE_PASSWORD" \
+            -storepass "$STORE_PASS" \
             -alias "$KEY_ALIAS" \
             > /dev/null 2>&1; then
 
@@ -212,6 +214,7 @@ jobs:
       - name: Build Release APK
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
@@ -222,12 +225,14 @@ jobs:
             exit 1
           fi
 
-          if [ -z "${KEYSTORE_PASSWORD:-}" ]; then
-            echo "::error::KEYSTORE_PASSWORD is missing!"
+          STORE_PASS="${STORE_PASSWORD:-${KEYSTORE_PASSWORD:-}}"
+          if [ -z "$STORE_PASS" ]; then
+            echo "::error::KEYSTORE_PASSWORD or STORE_PASSWORD is missing!"
             exit 1
           fi
 
-          if [ -z "${KEY_PASSWORD:-}" ]; then
+          KEY_PASS="${KEY_PASSWORD:-$STORE_PASS}"
+          if [ -z "$KEY_PASS" ]; then
             echo "::error::KEY_PASSWORD is missing!"
             exit 1
           fi
@@ -244,9 +249,9 @@ jobs:
 
           ./gradlew assembleRelease \
             -Pandroid.injected.signing.store.file="$KEYSTORE_PATH" \
-            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.store.password="$STORE_PASS" \
             -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
-            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+            -Pandroid.injected.signing.key.password="$KEY_PASS"
 
       # 12. LOCATE, VERIFY, AND PROCESS APK
       - name: Verify and Process APK
