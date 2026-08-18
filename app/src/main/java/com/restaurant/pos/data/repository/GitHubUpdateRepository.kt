@@ -37,7 +37,7 @@ class GitHubUpdateRepository(private val context: Context) {
             if (connection.responseCode == 200) {
                 val jsonStr = connection.inputStream.bufferedReader().use { it.readText() }
                 val jsonObj = JSONObject(jsonStr)
-                val tagVersion = jsonObj.optString("tag_name", "v1.0.0").replace("v", "")
+                val tagVersion = jsonObj.optString("tag_name", "v1.0.0").trim().trimStart('v', 'V')
                 val releaseNotes = jsonObj.optString("body", "Bug fixes and performance improvements.")
                 
                 var apkDownloadUrl = ""
@@ -84,10 +84,10 @@ class GitHubUpdateRepository(private val context: Context) {
             val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             val uri = Uri.parse(downloadUrl)
             val request = DownloadManager.Request(uri).apply {
-                setTitle("Dynamic POS Update v$version")
+                setTitle("Restaurant POS Update v$version")
                 setDescription("Downloading latest release APK...")
                 setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "dynamic_pos_v$version.apk")
+                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "restaurant_pos_v$version.apk")
             }
             return downloadManager.enqueue(request)
         } catch (e: Exception) {
@@ -97,8 +97,10 @@ class GitHubUpdateRepository(private val context: Context) {
     }
 
     private fun compareVersions(v1: String, v2: String): Int {
-        val parts1 = v1.split(".").mapNotNull { it.toIntOrNull() }
-        val parts2 = v2.split(".").mapNotNull { it.toIntOrNull() }
+        val clean1 = v1.trim().trimStart('v', 'V')
+        val clean2 = v2.trim().trimStart('v', 'V')
+        val parts1 = clean1.split(".").mapNotNull { it.toIntOrNull() }
+        val parts2 = clean2.split(".").mapNotNull { it.toIntOrNull() }
         val maxLen = maxOf(parts1.size, parts2.size)
         for (i in 0 until maxLen) {
             val p1 = parts1.getOrElse(i) { 0 }

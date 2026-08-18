@@ -75,9 +75,9 @@ class BackupManager(
 
             val metadataObj = JSONObject().apply {
                 put("backupVersion", 1)
-                put("appName", "Dynamic Restaurant POS")
+                put("appName", "Restaurant POS")
                 put("packageName", context.packageName)
-                put("appVersion", "1.0.0")
+                put("appVersion", com.restaurant.pos.BuildConfig.VERSION_NAME)
                 put("dbVersion", 8)
                 put("timestamp", now)
                 put("createdAt", formattedDate)
@@ -281,7 +281,7 @@ class BackupManager(
                 outStream.flush()
             } ?: return BackupResult.Error("Failed to open storage output stream.")
 
-            var fileName = "DynamicRestaurant_Backup.json"
+            var fileName = "Restaurant_POS_Backup.json"
             var fileSize = jsonBytes.size.toLong()
 
             context.contentResolver.query(targetUri, null, null, null, null)?.use { cursor ->

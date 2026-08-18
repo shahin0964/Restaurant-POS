@@ -13,12 +13,17 @@ android {
   namespace = "com.restaurant.pos"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
+  val envVersion = (project.findProperty("VERSION_NAME") as? String)
+    ?.ifBlank { null }
+    ?: System.getenv("VERSION_NAME")?.ifBlank { null }
+    ?: "1.0.0.15"
+
   defaultConfig {
     applicationId = "com.restaurant.pos"
     minSdk = 24
     targetSdk = 36
     versionCode = 1
-    versionName = "1.0.0"
+    versionName = envVersion
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -101,7 +106,7 @@ dependencies {
   implementation(libs.androidx.room.runtime)
   implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
-  implementation(libs.firebase.ai)
+  // implementation(libs.firebase.ai)
   // Uncomment to use Firestore:
   implementation(libs.firebase.firestore)
 

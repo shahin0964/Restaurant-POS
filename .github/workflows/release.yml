@@ -189,26 +189,67 @@ jobs:
           fi
 
       # 10. DETERMINE APP VERSION & TAG
-      - name: Extract Version Info
+      - name: Auto-Determine Next Version Info
         id: version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          VERSION_NAME=$(grep -E 'versionName\s*=' app/build.gradle.kts | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
 
-          if [ -z "$VERSION_NAME" ]; then
-            VERSION_NAME="1.0.0"
+          LATEST_TAG=""
+          
+          # 1. Query latest release tag from GitHub API if token available
+          if [ -n "${GITHUB_TOKEN:-}" ]; then
+            LATEST_TAG=$(curl -sSL -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest" 2>/dev/null | grep -o '"tag_name": "[^"]*"' | head -n 1 | cut -d'"' -f4 || true)
           fi
 
-          TAG_NAME="v${VERSION_NAME}"
-
-          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
-            TAG_NAME="v${VERSION_NAME}.${GITHUB_RUN_NUMBER}"
+          # 2. Fallback: Query local/remote git tags
+          if [ -z "$LATEST_TAG" ]; then
+            LATEST_TAG=$(git tag -l "v*" | sort -V | tail -n 1 || true)
           fi
+
+          # 3. Default base version if no previous releases exist
+          if [ -z "$LATEST_TAG" ]; then
+            LATEST_TAG="v1.0.0.14"
+          fi
+
+          echo "Latest found release tag: $LATEST_TAG"
+
+          # Clean tag string
+          RAW_VER="${LATEST_TAG#[vV]}"
+
+          # Calculate next patch version automatically
+          if [[ "$RAW_VER" =~ ^(.*)\.([0-9]+)$ ]]; then
+            PREFIX="${BASH_REMATCH[1]}"
+            LAST_NUM="${BASH_REMATCH[2]}"
+            NEXT_NUM=$((LAST_NUM + 1))
+            NEXT_VER="${PREFIX}.${NEXT_NUM}"
+          elif [[ "$RAW_VER" =~ ^[0-9]+$ ]]; then
+            NEXT_VER=$((RAW_VER + 1))
+          else
+            NEXT_VER="${RAW_VER}.1"
+          fi
+
+          # Ensure collision avoidance with existing git tags
+          TAG_NAME="v${NEXT_VER}"
+          while git rev-parse "$TAG_NAME" >/dev/null 2>&1; do
+            if [[ "$NEXT_VER" =~ ^(.*)\.([0-9]+)$ ]]; then
+              PREFIX="${BASH_REMATCH[1]}"
+              NEXT_NUM=$((${BASH_REMATCH[2]} + 1))
+              NEXT_VER="${PREFIX}.${NEXT_NUM}"
+              TAG_NAME="v${NEXT_VER}"
+            else
+              break
+            fi
+          done
+
+          VERSION_NAME="${NEXT_VER}"
 
           echo "VERSION_NAME=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
           echo "TAG_NAME=${TAG_NAME}" >> "$GITHUB_OUTPUT"
-          echo "Resolved App Version: ${VERSION_NAME}"
-          echo "Resolved Release Tag: ${TAG_NAME}"
+          echo "VERSION_NAME=${VERSION_NAME}" >> "$GITHUB_ENV"
+          echo "Auto-Generated Version Name: ${VERSION_NAME}"
+          echo "Auto-Generated Release Tag: ${TAG_NAME}"
 
       # 11. BUILD PRODUCTION RELEASE APK
       - name: Build Release APK
@@ -217,6 +258,7 @@ jobs:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          VERSION_NAME: ${{ steps.version.outputs.VERSION_NAME }}
         run: |
           set -euo pipefail
 
@@ -245,9 +287,10 @@ jobs:
           echo "Running ./gradlew clean..."
           ./gradlew clean
 
-          echo "Building production release APK..."
+          echo "Building production release APK for version ${VERSION_NAME}..."
 
           ./gradlew assembleRelease \
+            -PVERSION_NAME="${VERSION_NAME}" \
             -Pandroid.injected.signing.store.file="$KEYSTORE_PATH" \
             -Pandroid.injected.signing.store.password="$STORE_PASS" \
             -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
@@ -275,7 +318,7 @@ jobs:
             exit 1
           fi
 
-          DEST_APK="Dynamic-Restaurant-POS-v${VERSION_NAME}.apk"
+          DEST_APK="Restaurant-POS-v${VERSION_NAME}.apk"
 
           cp "$APK_PATH" "$DEST_APK"
 
@@ -297,8 +340,9 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.TAG_NAME }}
           name: "Release ${{ steps.version.outputs.TAG_NAME }}"
+          body: "Restaurant POS Production Release ${{ steps.version.outputs.TAG_NAME }}"
           files: ${{ steps.process_apk.outputs.APK_PATH }}
-          generate_release_notes: true
+          generate_release_notes: false
           draft: false
           prerelease: false
         env:

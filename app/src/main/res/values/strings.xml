@@ -64,7 +64,7 @@
     <string name="lbl_qty">Qty</string>
     <string name="lbl_action">Action</string>
 
-    <string name="msg_login_title">Dynamic Restaurant POS</string>
+    <string name="msg_login_title">Restaurant POS</string>
     <string name="msg_login_subtitle">Sign in to your account</string>
     <string name="msg_empty_orders">No orders found</string>
     <string name="msg_coming_soon">Coming Soon</string>

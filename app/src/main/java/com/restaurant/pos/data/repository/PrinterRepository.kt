@@ -145,7 +145,7 @@ class PrinterRepository(
 
             // Double height & width for header
             stream.write(byteArrayOf(0x1D, 0x21, 0x11))
-            val shopName = if (receiptSetting.showShopName && receiptSetting.shopName.isNotBlank()) receiptSetting.shopName else "DYNAMIC RESTAURANT"
+            val shopName = if (receiptSetting.showShopName && receiptSetting.shopName.isNotBlank()) receiptSetting.shopName else "RESTAURANT POS"
             stream.write("$shopName\n".toByteArray(Charsets.UTF_8))
             
             // Normal text

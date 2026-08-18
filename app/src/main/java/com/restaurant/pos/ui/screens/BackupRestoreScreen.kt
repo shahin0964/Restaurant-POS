@@ -322,7 +322,7 @@ fun BackupRestoreScreen(
                                     return@Button
                                 }
                                 val timestampStr = SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.US).format(Date())
-                                val suggestedName = "DynamicRestaurant_Backup_$timestampStr.json"
+                                val suggestedName = "RestaurantPOS_Backup_$timestampStr.json"
                                 createDocumentLauncher?.launch(suggestedName)
                             },
                             enabled = isAuthorized,
@@ -391,7 +391,7 @@ fun BackupRestoreScreen(
                         }
 
                         Text(
-                            text = "Select a valid Dynamic Restaurant backup JSON file from storage. The file will be thoroughly validated before restoring.",
+                            text = "Select a valid Restaurant POS backup JSON file from storage. The file will be thoroughly validated before restoring.",
                             color = TextMuted,
                             fontSize = 12.sp
                         )

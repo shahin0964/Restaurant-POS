@@ -585,6 +585,7 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
                 sharedPrefs.edit().putBoolean("has_removed_existing_products_and_categories_v1", true).apply()
             }
             restaurantRepo.seedDatabaseIfNeeded()
+            checkForGitHubUpdates()
         }
     }
 
