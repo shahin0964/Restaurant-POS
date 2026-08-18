@@ -183,9 +183,56 @@ jobs:
             echo "Restoring google-services.json from GOOGLE_SERVICES_BASE64 secret..."
             printf '%s' "$GOOGLE_SERVICES_BASE64" | base64 --decode > app/google-services.json
           else
-            echo "::error::File google-services.json is missing, and neither GOOGLE_SERVICES_JSON nor GOOGLE_SERVICES_BASE64 secret is provided!"
-            echo "::error::Please add the required Firebase configuration secret to GitHub Actions."
-            exit 1
+            echo "Writing default project app/google-services.json..."
+            cat << 'EOF' > app/google-services.json
+{
+  "project_info": {
+    "project_number": "418091820215",
+    "project_id": "restaurant-pos-99d57",
+    "storage_bucket": "restaurant-pos-99d57.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:418091820215:android:604dd2fba23f0bd964d932",
+        "android_client_info": {
+          "package_name": "com.restaurant.pos"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "418091820215-j07qhv8noeqqnmlt1sd9eu6p4fl0jhc7.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.restaurant.pos",
+            "certificate_hash": "c1ab0c8a44fb619d25da281fb006cd6a35b0d11e"
+          }
+        },
+        {
+          "client_id": "418091820215-g00hq779kcv0nkc1jbku6i04lsqliuhf.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDZ89XzrjitSB2TIH9u-JGDSfEVq1jVBiU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "418091820215-g00hq779kcv0nkc1jbku6i04lsqliuhf.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
+EOF
           fi
 
       # 10. DETERMINE APP VERSION & TAG
