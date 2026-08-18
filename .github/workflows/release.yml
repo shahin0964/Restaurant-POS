@@ -28,11 +28,66 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      # 3. SET UP GRADLE
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v3
+      # 3. DETERMINE GRADLE VERSION
+      - name: Determine Required Gradle Version
+        id: gradle_ver
+        run: |
+          set -euo pipefail
+          REQ_VER=$(grep -oE 'gradle-[0-9.]+-' gradle/wrapper/gradle-wrapper.properties | sed -E 's/gradle-([0-9.]+)-/\1/' | head -n 1 || true)
+          if [ -z "$REQ_VER" ]; then
+            REQ_VER="9.3.1"
+          fi
+          echo "REQUIRED_GRADLE_VERSION=${REQ_VER}" >> $GITHUB_OUTPUT
+          echo "Project requires Gradle version: ${REQ_VER}"
 
-      # 4. DECODE AND PREPARE KEYSTORE
+      # 4. INSTALL STANDALONE GRADLE DISTRIBUTION DIRECTLY
+      - name: Install Standalone Gradle
+        run: |
+          set -euo pipefail
+          GRADLE_VER="${{ steps.gradle_ver.outputs.REQUIRED_GRADLE_VERSION }}"
+          echo "Downloading official standalone Gradle ${GRADLE_VER}..."
+          curl -sSL "https://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip" -o gradle-dist.zip
+          sudo unzip -q gradle-dist.zip -d /opt
+          sudo ln -sf "/opt/gradle-${GRADLE_VER}/bin/gradle" /usr/local/bin/gradle
+          rm -f gradle-dist.zip
+
+      # 5. DIAGNOSTIC: STANDALONE GRADLE VERSION BEFORE REGENERATION
+      - name: Diagnostic - Standalone Gradle Version
+        run: |
+          set -euo pipefail
+          gradle --version
+
+      # 6. REGENERATE GRADLE WRAPPER
+      - name: Regenerate Gradle Wrapper
+        run: |
+          set -euo pipefail
+          GRADLE_VER="${{ steps.gradle_ver.outputs.REQUIRED_GRADLE_VERSION }}"
+          echo "Removing existing wrapper JAR..."
+          rm -f gradle/wrapper/gradle-wrapper.jar
+          echo "Regenerating wrapper with Gradle ${GRADLE_VER}..."
+          gradle wrapper --gradle-version "${GRADLE_VER}" --distribution-type bin
+
+      # 7. VALIDATE REGENERATED GRADLE WRAPPER JAR
+      - name: Validate Gradle Wrapper JAR
+        run: |
+          set -euo pipefail
+          if [ ! -s gradle/wrapper/gradle-wrapper.jar ]; then
+            echo "::error::gradle-wrapper.jar is missing or empty!"
+            exit 1
+          fi
+          echo "Inspecting regenerated gradle-wrapper.jar contents..."
+          jar tf gradle/wrapper/gradle-wrapper.jar | head -n 10
+          echo "gradle-wrapper.jar is a valid JAR archive."
+
+      # 8. DIAGNOSTIC: VERIFY GRADLEW
+      - name: Diagnostic - Gradlew Version
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          sed -i -e 's/\r$//' ./gradlew || true
+          ./gradlew --version
+
+      # 9. DECODE AND PREPARE KEYSTORE
       - name: Prepare Keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -40,8 +95,9 @@ jobs:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          set -euo pipefail
           echo "Setting up release signing keystore..."
-          if [ -n "$KEYSTORE_BASE64" ]; then
+          if [ -n "${KEYSTORE_BASE64:-}" ]; then
             CLEANED_BASE64=$(echo "$KEYSTORE_BASE64" | tr -d '\r\n\t ')
             if echo "$CLEANED_BASE64" | base64 --decode > my-upload-key.jks 2>/dev/null && [ -s my-upload-key.jks ]; then
               echo "Keystore decoded successfully."
@@ -55,11 +111,12 @@ jobs:
             echo "::warning::No KEYSTORE_BASE64 secret provided and no local my-upload-key.jks found."
           fi
 
-      # 5. DETERMINE APP VERSION & TAG
+      # 10. DETERMINE APP VERSION & TAG
       - name: Extract Version Info
         id: version
         run: |
-          VERSION_NAME=$(grep -E 'versionName\s*=' app/build.gradle.kts | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+          set -euo pipefail
+          VERSION_NAME=$(grep -E 'versionName\s*=' app/build.gradle.kts | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
           if [ -z "$VERSION_NAME" ]; then
             VERSION_NAME="1.0.0"
           fi
@@ -74,13 +131,7 @@ jobs:
           echo "Resolved App Version: ${VERSION_NAME}"
           echo "Resolved Release Tag: ${TAG_NAME}"
 
-      # 6. REPAIR GRADLE WRAPPER
-      - name: Prepare Gradle Wrapper
-        run: |
-          chmod +x ./gradlew
-          sed -i -e 's/\r$//' ./gradlew || true
-
-      # 7. BUILD PRODUCTION RELEASE APK
+      # 11. BUILD PRODUCTION RELEASE APK (CLEAN & ASSEMBLE)
       - name: Build Release APK
         env:
           KEYSTORE_PATH: my-upload-key.jks
@@ -89,24 +140,29 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
-          STORE_PASS="${STORE_PASSWORD:-${KEYSTORE_PASSWORD}}"
+          set -euo pipefail
+          STORE_PASS="${STORE_PASSWORD:-${KEYSTORE_PASSWORD:-}}"
           ALIAS_VAL="${KEY_ALIAS:-upload}"
+          
+          echo "Running ./gradlew clean..."
+          ./gradlew clean
+
+          echo "Building production release APK..."
           ./gradlew assembleRelease \
             -Pandroid.injected.signing.store.file=my-upload-key.jks \
             -Pandroid.injected.signing.store.password="${STORE_PASS}" \
             -Pandroid.injected.signing.key.alias="${ALIAS_VAL}" \
-            -Pandroid.injected.signing.key.password="${KEY_PASSWORD}"
+            -Pandroid.injected.signing.key.password="${KEY_PASSWORD:-}"
 
-      # 8. LOCATE, VERIFY, AND PROCESS APK
+      # 12. LOCATE, VERIFY, AND PROCESS APK
       - name: Verify and Process APK
         id: process_apk
         run: |
+          set -euo pipefail
           VERSION_NAME="${{ steps.version.outputs.VERSION_NAME }}"
-          APK_PATH="app/build/outputs/apk/release/app-release.apk"
-
-          if [ ! -f "$APK_PATH" ]; then
-            APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
-          fi
+          
+          echo "Locating generated release APK..."
+          APK_PATH=$(find app/build/outputs/apk -type f -name "*.apk" | head -n 1 || true)
 
           if [ -z "$APK_PATH" ] || [ ! -f "$APK_PATH" ]; then
             echo "::error::Production release APK was not found after build!"
@@ -124,7 +180,7 @@ jobs:
           echo "APK_PATH=${DEST_APK}" >> $GITHUB_OUTPUT
           echo "Successfully verified release APK at: ${DEST_APK}"
 
-      # 9. UPLOAD APK ARTIFACT
+      # 13. UPLOAD APK ARTIFACT
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -132,7 +188,7 @@ jobs:
           path: ${{ steps.process_apk.outputs.APK_PATH }}
           if-no-files-found: error
 
-      # 10. CREATE GITHUB RELEASE (ONLY ON PUSH TO MAIN)
+      # 14. CREATE GITHUB RELEASE (ONLY ON PUSH TO MAIN)
       - name: Create GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
@@ -145,3 +201,4 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
