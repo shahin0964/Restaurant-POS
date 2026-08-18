@@ -1,0 +1,72 @@
+<resources>
+    <string name="app_name">ডায়নামিক রেস্টুরেন্ট</string>
+    <string name="nav_home">হোম</string>
+    <string name="nav_new_order">নতুন অর্ডার</string>
+    <string name="nav_orders">অর্ডারসমূহ</string>
+    <string name="nav_kitchen">রান্নাঘর</string>
+    <string name="nav_reports">রিপোর্ট</string>
+    <string name="nav_more">আরও</string>
+
+    <string name="more_profile">👤 প্রোফাইল</string>
+    <string name="more_profile_desc">ব্যবহারকারীর বিবরণ দেখুন এবং লগআউট করুন</string>
+    <string name="more_notifications">বিজ্ঞপ্তি</string>
+    <string name="more_notifications_desc">বিজ্ঞপ্তি সেটিংস, ইতিহাস এবং পরিচালনা</string>
+    <string name="more_tables">টেবিল / ডাইন-ইন পরিচালনা</string>
+    <string name="more_tables_desc">টেবিল বুকিং এবং ডাইন-ইন অবস্থা পরিচালনা করুন</string>
+    <string name="more_delivery">ডেলিভারি পরিচালনা</string>
+    <string name="more_delivery_desc">ডেলিভারি অর্ডার এবং রাইডার পরিচালনা</string>
+    <string name="more_analytics">বিক্রয় বিশ্লেষণ</string>
+    <string name="more_analytics_desc">শীর্ষ খাবার, ব্যস্ত সময় এবং বিক্রয় বিবরণ</string>
+    <string name="more_products">খাবার / ক্যাটাগরি</string>
+    <string name="more_products_desc">খাবারের তালিকা, ক্যাটাগরি এবং মূল্য পরিচালনা</string>
+    <string name="more_order_history">অর্ডারের ইতিহাস</string>
+    <string name="more_order_history_desc">পূর্ববর্তী সমস্ত অর্ডার এবং রসিদ দেখুন</string>
+    <string name="more_staff">স্টাফ / ব্যবহারকারী</string>
+    <string name="more_staff_desc">স্টাফ অ্যাকাউন্ট, ভূমিকা এবং অনুমতি পরিচালনা করুন</string>
+    <string name="more_inventory">স্টক / ইনভেন্টরি</string>
+    <string name="more_inventory_desc">স্টকের পরিমাণ এবং কম স্টক সতর্কবার্তা</string>
+    <string name="more_receipt_settings">রসিদ / ইনভয়েস সেটিংস</string>
+    <string name="more_receipt_settings_desc">রসিদের হেডার, লোগো এবং ফুটার কনফিগার করুন</string>
+    <string name="more_printer_settings">প্রিন্টার সেটিংস</string>
+    <string name="more_printer_settings_desc">ব্লুটুথ, ওয়াই-ফাই এবং ইউএসবি প্রিন্টার সংযুক্ত করুন</string>
+    <string name="more_backup_restore">ব্যাকআপ ও রিস্টোর</string>
+    <string name="more_backup_restore_desc">অর্ডার এবং সেটিংস এক্সপোর্ট ও রিস্টোর করুন</string>
+    <string name="more_shop_report">শপ রিপোর্ট</string>
+    <string name="more_shop_report_desc">বিক্রয়, খরচ এবং দৈনিক রিপোর্ট দেখুন</string>
+    <string name="more_business_settings">ব্যবসায়িক সেটিংস</string>
+    <string name="more_business_settings_desc">রেস্টুরেন্টের নাম, যোগাযোগ, মুদ্রা এবং কর সেটিংস</string>
+    <string name="more_app_update">অ্যাপ আপডেট</string>
+    <string name="more_app_update_desc">অ্যাপের সর্বশেষ সংস্করণ পরীক্ষা ও আপডেট করুন</string>
+    <string name="more_theme">থিম</string>
+    <string name="more_theme_desc">অ্যাপের থিম ও রূপরেখা পরিবর্তন করুন</string>
+
+    <string name="btn_save">সংরক্ষণ করুন</string>
+    <string name="btn_cancel">বাতিল</string>
+    <string name="btn_delete">মুছে ফেলুন</string>
+    <string name="btn_close">বন্ধ করুন</string>
+    <string name="btn_ok">ঠিক আছে</string>
+    <string name="btn_logout">লগআউট</string>
+    <string name="btn_edit">সম্পাদনা</string>
+    <string name="btn_add">যোগ করুন</string>
+    <string name="btn_search">খুঁজুন</string>
+    <string name="btn_pay">পেমেন্ট করুন</string>
+    <string name="btn_print">প্রিন্ট করুন</string>
+
+    <string name="lbl_username">ব্যবহারকারীর নাম / ইমেইল</string>
+    <string name="lbl_password">পাসওয়ার্ড</string>
+    <string name="lbl_role">ভূমিকা</string>
+    <string name="lbl_status">অবস্থা</string>
+    <string name="lbl_total">মোট</string>
+    <string name="lbl_subtotal">উপমোট</string>
+    <string name="lbl_discount">ছাড়</string>
+    <string name="lbl_vat">ভ্যাট (VAT)</string>
+    <string name="lbl_price">মূল্য</string>
+    <string name="lbl_qty">পরিমাণ</string>
+    <string name="lbl_action">অ্যাকশন</string>
+
+    <string name="msg_login_title">ডায়নামিক রেস্টুরেন্ট পিওএস</string>
+    <string name="msg_login_subtitle">আপনার অ্যাকাউন্টে সাইন ইন করুন</string>
+    <string name="msg_empty_orders">কোনো অর্ডার পাওয়া যায়নি</string>
+    <string name="msg_coming_soon">শীঘ্রই আসছে</string>
+    <string name="msg_confirm_delete">আপনি কি এটি মুছে ফেলতে নিশ্চিত?</string>
+</resources>

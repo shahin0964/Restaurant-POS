@@ -1,0 +1,144 @@
+name: Production Android Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Release Production APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. CHECKOUT REPOSITORY
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 2. SET UP JAVA JDK 21
+      - name: Set up Java JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+
+      # 3. SET UP GRADLE
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      # 4. DECODE AND PREPARE KEYSTORE
+      - name: Prepare Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "Setting up release signing keystore..."
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            CLEANED_BASE64=$(echo "$KEYSTORE_BASE64" | tr -d '\r\n\t ')
+            if echo "$CLEANED_BASE64" | base64 --decode > my-upload-key.jks 2>/dev/null && [ -s my-upload-key.jks ]; then
+              echo "Keystore decoded successfully."
+            else
+              echo "::error::KEYSTORE_BASE64 is present but could not be decoded into a valid keystore file!"
+              exit 1
+            fi
+          elif [ -f "my-upload-key.jks" ]; then
+            echo "Using existing repository keystore file."
+          else
+            echo "::warning::No KEYSTORE_BASE64 secret provided and no local my-upload-key.jks found."
+          fi
+
+      # 5. DETERMINE APP VERSION & TAG
+      - name: Extract Version Info
+        id: version
+        run: |
+          VERSION_NAME=$(grep -E 'versionName\s*=' app/build.gradle.kts | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ -z "$VERSION_NAME" ]; then
+            VERSION_NAME="1.0.0"
+          fi
+
+          TAG_NAME="v${VERSION_NAME}"
+          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+            TAG_NAME="v${VERSION_NAME}.${GITHUB_RUN_NUMBER}"
+          fi
+
+          echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_OUTPUT
+          echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_OUTPUT
+          echo "Resolved App Version: ${VERSION_NAME}"
+          echo "Resolved Release Tag: ${TAG_NAME}"
+
+      # 6. REPAIR GRADLE WRAPPER
+      - name: Prepare Gradle Wrapper
+        run: |
+          chmod +x gradlew || true
+          sed -i -e 's/\r$//' gradlew || true
+
+      # 7. BUILD PRODUCTION RELEASE APK
+      - name: Build Release APK
+        env:
+          KEYSTORE_PATH: my-upload-key.jks
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          ALIAS_VAL="${KEY_ALIAS:-upload}"
+          ./gradlew :app:assembleRelease \
+            -Pandroid.injected.signing.store.file=my-upload-key.jks \
+            -Pandroid.injected.signing.store.password="${STORE_PASSWORD}" \
+            -Pandroid.injected.signing.key.alias="${ALIAS_VAL}" \
+            -Pandroid.injected.signing.key.password="${KEY_PASSWORD}"
+
+      # 8. LOCATE, VERIFY, AND PROCESS APK
+      - name: Verify and Process APK
+        id: process_apk
+        run: |
+          VERSION_NAME="${{ steps.version.outputs.VERSION_NAME }}"
+          APK_PATH="app/build/outputs/apk/release/app-release.apk"
+
+          if [ ! -f "$APK_PATH" ]; then
+            APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          fi
+
+          if [ -z "$APK_PATH" ] || [ ! -f "$APK_PATH" ]; then
+            echo "::error::Production release APK was not found after build!"
+            exit 1
+          fi
+
+          if ! unzip -t "$APK_PATH" > /dev/null 2>&1; then
+            echo "::error::The generated APK file is invalid or corrupt!"
+            exit 1
+          fi
+
+          DEST_APK="Dynamic-Restaurant-POS-v${VERSION_NAME}.apk"
+          cp "$APK_PATH" "$DEST_APK"
+
+          echo "APK_PATH=${DEST_APK}" >> $GITHUB_OUTPUT
+          echo "Successfully verified release APK at: ${DEST_APK}"
+
+      # 9. UPLOAD APK ARTIFACT
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-release-apk
+          path: ${{ steps.process_apk.outputs.APK_PATH }}
+          if-no-files-found: error
+
+      # 10. CREATE GITHUB RELEASE (ONLY ON PUSH TO MAIN)
+      - name: Create GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.TAG_NAME }}
+          name: "Release ${{ steps.version.outputs.TAG_NAME }}"
+          files: ${{ steps.process_apk.outputs.APK_PATH }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

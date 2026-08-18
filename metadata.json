@@ -1,0 +1,6 @@
+{
+  "name": "Restaurant POS",
+  "description": "Production POS and restaurant management application with database, orders, kitchen view, printer support, and reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

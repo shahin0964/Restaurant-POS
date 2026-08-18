@@ -1,0 +1,240 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------
+    // 1. CORE FUNCTIONS & AUTHENTICATION HELPERS
+    // ---------------------------------------------------------
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserDoc() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function isRegistered() {
+      return isAuthenticated() && exists(getUserDoc());
+    }
+
+    function getUserData() {
+      return get(getUserDoc()).data;
+    }
+
+    function isActive() {
+      return !isRegistered() ||
+        (getUserData().get('isActive', true) == true);
+    }
+
+    function getRole() {
+      return isRegistered() && ('role' in getUserData())
+        ? getUserData().role
+        : 'Staff';
+    }
+
+    function isAdmin() {
+      let role = getRole();
+      return role == 'Administrator' ||
+             role == 'ADMINISTRATOR' ||
+             role == 'Admin' ||
+             role == 'ADMIN';
+    }
+
+    function isManager() {
+      let role = getRole();
+      return role == 'Manager' ||
+             role == 'MANAGER';
+    }
+
+    function isAuthorized() {
+      return isAuthenticated() && isActive();
+    }
+
+
+    // ---------------------------------------------------------
+    // 2. USERS & STAFF
+    // ---------------------------------------------------------
+
+    match /users/{userId} {
+
+      // Authorized users can read users/staff.
+      allow read: if isAuthorized();
+
+
+      // -------------------------------------------------------
+      // CREATE
+      //
+      // 1. User can create their own initial profile.
+      // 2. Administrator can create Staff profiles (role must be 'Staff').
+      // -------------------------------------------------------
+
+      allow create: if isAuthenticated() && (
+        request.auth.uid == userId ||
+        (
+          isAuthorized() &&
+          isAdmin() &&
+          request.resource.data.role == 'Staff'
+        )
+      );
+
+
+      // -------------------------------------------------------
+      // UPDATE
+      //
+      // Administrator can update staff (cannot promote any user to 2nd Administrator).
+      // Normal user can update only their own profile without modifying role/isActive/firebaseUid.
+      // -------------------------------------------------------
+
+      allow update: if isAuthorized() && (
+        (
+          isAdmin() &&
+          (
+            // Admin updating self/existing admin OR keeping staff role as Staff
+            resource.data.role == 'Administrator' ||
+            resource.data.role == 'ADMINISTRATOR' ||
+            resource.data.role == 'Admin' ||
+            resource.data.role == 'ADMIN' ||
+            request.resource.data.role == 'Staff'
+          )
+        ) ||
+        (
+          request.auth.uid == userId &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.isActive == resource.data.isActive &&
+          request.resource.data.firebaseUid == resource.data.firebaseUid
+        )
+      );
+
+
+      // -------------------------------------------------------
+      // DELETE
+      // Only Administrator can delete staff profiles (cannot delete Administrator).
+      // -------------------------------------------------------
+
+      allow delete: if isAuthorized() && isAdmin() &&
+        resource.data.role != 'Administrator' &&
+        resource.data.role != 'ADMINISTRATOR' &&
+        resource.data.role != 'Admin' &&
+        resource.data.role != 'ADMIN';
+    }
+
+
+    // ---------------------------------------------------------
+    // 3. POS MODULES
+    // ---------------------------------------------------------
+
+    // Categories
+    match /categories/{docId} {
+      allow read: if isAuthorized();
+      allow write: if isAuthorized() &&
+        (isAdmin() || isManager());
+    }
+
+
+    // Menu Items / Products
+    match /menu_items/{docId} {
+      allow read: if isAuthorized();
+      allow write: if isAuthorized() &&
+        (isAdmin() || isManager());
+    }
+
+
+    // Offers
+    match /offers/{docId} {
+      allow read: if isAuthorized();
+      allow write: if isAuthorized() &&
+        (isAdmin() || isManager());
+    }
+
+
+    // Tables
+    match /tables/{docId} {
+      allow read: if isAuthorized();
+      allow write: if isAuthorized() &&
+        (isAdmin() || isManager());
+    }
+
+
+    // ---------------------------------------------------------
+    // 4. ORDERS
+    // ---------------------------------------------------------
+
+    match /orders/{docId} {
+      allow read, create, update: if isAuthorized();
+
+      allow delete: if isAuthorized() &&
+        (isAdmin() || isManager());
+    }
+
+
+    // Order Items
+    match /order_items/{docId} {
+      allow read, create, update: if isAuthorized();
+
+      allow delete: if isAuthorized() &&
+        (isAdmin() || isManager());
+    }
+
+
+    // Expenses
+    match /expenses/{docId} {
+      allow read, create, update: if isAuthorized();
+
+      allow delete: if isAuthorized() &&
+        (isAdmin() || isManager());
+    }
+
+
+    // ---------------------------------------------------------
+    // 5. STOCK & INVENTORY
+    // ---------------------------------------------------------
+
+    match /stock_logs/{docId} {
+
+      allow read: if isAuthorized();
+
+      allow create: if isAuthorized();
+
+      allow update, delete: if isAuthorized() &&
+        (isAdmin() || isManager());
+    }
+
+
+    // ---------------------------------------------------------
+    // 6. SYSTEM SETTINGS
+    // ---------------------------------------------------------
+
+    match /printer_settings/{docId} {
+      allow read: if isAuthorized();
+      allow write: if isAuthorized() && isAdmin();
+    }
+
+
+    match /receipt_settings/{docId} {
+      allow read: if isAuthorized();
+      allow write: if isAuthorized() && isAdmin();
+    }
+
+
+    // ---------------------------------------------------------
+    // 7. NOTIFICATIONS
+    // ---------------------------------------------------------
+
+    match /notifications/{docId} {
+      allow read: if isAuthorized();
+      allow write: if isAuthorized();
+    }
+
+
+    // ---------------------------------------------------------
+    // 8. GLOBAL FALLBACK
+    // ---------------------------------------------------------
+
+    // Everything else is denied.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

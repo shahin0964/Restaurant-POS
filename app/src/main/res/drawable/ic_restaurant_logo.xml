@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="0.75"
+        android:scaleY="0.75">
+
+        <!-- Outer circular ring -->
+        <path
+            android:fillColor="@android:color/transparent"
+            android:strokeColor="#FFD447"
+            android:strokeWidth="2.5"
+            android:strokeLineCap="round"
+            android:pathData="M54,10A44,44 0,1 1,53.9 10" />
+
+        <!-- Dynamic inner swoosh accents -->
+        <path
+            android:fillColor="@android:color/transparent"
+            android:strokeColor="#E5A900"
+            android:strokeWidth="1.6"
+            android:strokeLineCap="round"
+            android:pathData="M24,25C16,35 16,50 21,60" />
+
+        <path
+            android:fillColor="@android:color/transparent"
+            android:strokeColor="#E5A900"
+            android:strokeWidth="1.6"
+            android:strokeLineCap="round"
+            android:pathData="M84,83C92,73 93,58 88,48" />
+
+        <!-- Pendant lamp stem -->
+        <path
+            android:fillColor="#FFD447"
+            android:pathData="M52.5,17h3v8h-3z" />
+
+        <!-- Steam / heat lines -->
+        <path
+            android:fillColor="@android:color/transparent"
+            android:strokeColor="#FFD447"
+            android:strokeWidth="2.0"
+            android:strokeLineCap="round"
+            android:pathData="M48,19C45.5,22 45.5,25 48,27" />
+
+        <path
+            android:fillColor="@android:color/transparent"
+            android:strokeColor="#FFD447"
+            android:strokeWidth="2.0"
+            android:strokeLineCap="round"
+            android:pathData="M60,19C62.5,22 62.5,25 60,27" />
+
+        <!-- Lamp cap -->
+        <path
+            android:fillColor="#FFD447"
+            android:pathData="M50,25h8v4h-8z" />
+
+        <!-- Lamp dome -->
+        <path
+            android:fillColor="#F5B800"
+            android:pathData="M38,38C39,31 45,27 54,27C63,27 69,31 70,38Z" />
+
+        <!-- Lamp glow edge -->
+        <path
+            android:fillColor="#FFE58A"
+            android:pathData="M38,38h32c-1,2 -4,3 -7,3H45c-3,0 -6,-1 -7,-3z" />
+
+        <!-- POS terminal body -->
+        <path
+            android:fillColor="#F5B800"
+            android:pathData="M40,43h28c2,0 3.5,1.5 3.5,3.5v12c0,2 -1.5,3.5 -3.5,3.5H40c-2,0 -3.5,-1.5 -3.5,-3.5v-12c0,-2 1.5,-3.5 3.5,-3.5z" />
+
+        <!-- POS screen -->
+        <path
+            android:fillColor="#090909"
+            android:pathData="M42,46h12v9H42z" />
+
+        <!-- Screen highlight -->
+        <path
+            android:fillColor="#252525"
+            android:pathData="M43,47h8l-8,7z" />
+
+        <!-- Keypad -->
+        <path
+            android:fillColor="#090909"
+            android:pathData="M57,46h3v3h-3zM62,46h3v3h-3zM57,51h3v3h-3zM62,51h3v3h-3zM57,56h3v3h-3zM62,56h3v-3h-3z" />
+
+        <!-- POS stand -->
+        <path
+            android:fillColor="#F5B800"
+            android:pathData="M45,61h18v3H45z" />
+
+        <!-- Cash drawer -->
+        <path
+            android:fillColor="#F5B800"
+            android:pathData="M38,64h32c1.5,0 2.5,1 2.5,2.5v5c0,1.5 -1,2.5 -2.5,2.5H38c-1.5,0 -2.5,-1 -2.5,-2.5v-5c0,-1.5 1,-2.5 2.5,-2.5z" />
+
+        <!-- Drawer slot -->
+        <path
+            android:fillColor="#090909"
+            android:pathData="M47,67h14c1,0 1.5,0.7 1.5,1.5S62,70 61,70H47c-1,0 -1.5,-0.7 -1.5,-1.5S46,67 47,67z" />
+
+        <!-- Drawer button -->
+        <path
+            android:fillColor="#090909"
+            android:pathData="M65,66.5a2,2 0,1 1,0 4a2,2 0,1 1,0 -4" />
+
+        <!-- Small gold baseline -->
+        <path
+            android:fillColor="#FFD447"
+            android:pathData="M39,79h30v1.5H39z" />
+
+        <!-- POS letters represented as clean geometric glyphs -->
+        <path
+            android:fillColor="#FFD447"
+            android:pathData="M41,83h5c2,0 3.5,1.2 3.5,3s-1.5,3 -3.5,3h-2v3h-3zM44,85v2h2c0.7,0 1.2,-0.4 1.2,-1s-0.5,-1 -1.2,-1z" />
+
+        <path
+            android:fillColor="#FFD447"
+            android:pathData="M53,83c-3,0 -4.5,2 -4.5,4.5S50,92 53,92s4.5,-2 4.5,-4.5S56,83 53,83zM53,85c1,0 1.5,1 1.5,2.5S54,90 53,90s-1.5,-1 -1.5,-2.5S52,85 53,85z" />
+
+        <path
+            android:fillColor="#FFD447"
+            android:pathData="M59,83h8v2h-5v1.5h4v2h-4V92h-3z" />
+
+    </group>
+
+</vector>
