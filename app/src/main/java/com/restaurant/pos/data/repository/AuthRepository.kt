@@ -89,7 +89,7 @@ class AuthRepository(
                 val assignedRole = if (remoteRole != null) {
                     remoteRole
                 } else {
-                    if (!hasAnyAdministrator()) "Administrator" else "Staff"
+                    "Administrator"
                 }
                 val defaultPerms = if (assignedRole.equals("Administrator", true) || assignedRole.equals("Admin", true)) {
                     com.restaurant.pos.data.model.AppPermission.allKeys().joinToString(",")
@@ -197,7 +197,7 @@ class AuthRepository(
                 val assignedRole = if (remoteRole != null) {
                     remoteRole
                 } else {
-                    if (!hasAnyAdministrator()) "Administrator" else "Staff"
+                    "Administrator"
                 }
                 localUser = UserEntity(
                     emailOrPhone = email,
@@ -260,9 +260,8 @@ class AuthRepository(
         val trimmedEmail = emailOrPhone.trim()
         val trimmedName = name.trim()
         return try {
-            // Determine role before creating: First signup is Administrator, any subsequent signup is Staff
-            val isFirstAdmin = !hasAnyAdministrator()
-            val role = if (isFirstAdmin) "Administrator" else "Staff"
+            // Determine role before creating: All signups are Administrator by default
+            val role = "Administrator"
 
             val authResult = firebaseAuth.createUserWithEmailAndPassword(trimmedEmail, password).await()
             val firebaseUser = authResult.user ?: throw Exception("Registration failed, user is null")
