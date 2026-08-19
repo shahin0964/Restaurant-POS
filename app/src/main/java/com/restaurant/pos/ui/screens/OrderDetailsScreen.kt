@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.restaurant.pos.R
 import com.restaurant.pos.data.db.OrderWithItems
+import com.restaurant.pos.ui.navigation.Routes
 import com.restaurant.pos.ui.theme.*
 import com.restaurant.pos.ui.viewmodel.RestaurantViewModel
 import java.text.SimpleDateFormat
@@ -31,6 +32,7 @@ import java.util.*
 @Composable
 fun OrderDetailsScreen(
     viewModel: RestaurantViewModel,
+    onNavigate: (String) -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -229,7 +231,26 @@ fun OrderDetailsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Items List
-            Text(stringResource(R.string.lbl_ordered_items), color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(stringResource(R.string.lbl_ordered_items), color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                
+                Button(
+                    onClick = {
+                        viewModel.setIsAddingToOrder(true)
+                        onNavigate(Routes.CATEGORY)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = CurrencyGold, contentColor = Color.Black),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Text("+ ADD", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
             Spacer(modifier = Modifier.height(8.dp))
 
             Card(

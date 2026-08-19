@@ -46,6 +46,7 @@ fun MoreScreen(
     onOpenProductsMenu: () -> Unit,
     onOpenOrderHistory: () -> Unit,
     onOpenStaffUsers: () -> Unit,
+    onOpenStaffFood: () -> Unit,
     onOpenStockInventory: () -> Unit,
     onOpenDiscountOffers: () -> Unit = {},
     onOpenInvoiceReceiptSettings: () -> Unit = {},
@@ -592,6 +593,60 @@ fun MoreScreen(
                             )
                             Text(
                                 text = stringResource(R.string.more_order_history_desc),
+                                color = TextSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = "Open",
+                        tint = TextMuted,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenStaffFood() }
+                    .testTag("more_item_staff_food")
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(CurrencyGold.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "🍽️",
+                                fontSize = 20.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column {
+                            Text(
+                                text = "Staff Food",
+                                color = TextPrimary,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Manage staff food consumption",
                                 color = TextSecondary,
                                 fontSize = 12.sp
                             )

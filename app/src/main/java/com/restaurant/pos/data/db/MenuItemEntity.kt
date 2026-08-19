@@ -16,5 +16,8 @@ data class MenuItemEntity(
     val stockQuantity: Int = 20,
     val unit: String = "pcs",
     val lowStockThreshold: Int = 10,
-    val costPrice: Double = 0.0
+    val costPrice: Double = 0.0,
+    val discountEnabled: Boolean = false,
+    val discountValue: Double = 0.0,
+    val discountType: String = "PERCENTAGE"
 )

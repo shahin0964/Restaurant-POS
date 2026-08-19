@@ -146,7 +146,7 @@ class PrinterRepository(
         return Bitmap.createBitmap(tempBitmap, 0, 0, targetWidth, y.toInt().coerceAtLeast(10))
     }
 
-    fun buildReceiptBitmap(orderWithItems: OrderWithItems, receiptSetting: ReceiptSettingEntity, paperSize: String = "58mm"): Bitmap {
+    fun buildReceiptBitmap(orderWithItems: OrderWithItems, receiptSetting: ReceiptSettingEntity, paperSize: String = "58mm", copyLabel: String? = null): Bitmap {
         val is80mm = paperSize == "80mm"
         val targetWidth = if (is80mm) 576 else 384
         val tempBitmap = Bitmap.createBitmap(targetWidth, 5000, Bitmap.Config.ARGB_8888)
@@ -158,6 +158,15 @@ class PrinterRepository(
         val headerPaint = TextPaint().apply { color = Color.BLACK; textSize = 28f; isAntiAlias = true; typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD) }
 
         var y = 16f
+        if (copyLabel != null) {
+            fun drawCentered(text: String, paint: TextPaint) {
+                val layout = StaticLayout.Builder.obtain(text, 0, text.length, paint, targetWidth).setAlignment(Layout.Alignment.ALIGN_CENTER).setLineSpacing(0f, 1.1f).setIncludePad(false).build()
+                canvas.save(); canvas.translate(0f, y); layout.draw(canvas); canvas.restore()
+                y += layout.height + 6f
+            }
+            drawCentered(copyLabel, headerPaint)
+            drawCentered("-".repeat(if (is80mm) 48 else 32), normalPaint)
+        }
         fun drawCentered(text: String, paint: TextPaint) {
             val layout = StaticLayout.Builder.obtain(text, 0, text.length, paint, targetWidth).setAlignment(Layout.Alignment.ALIGN_CENTER).setLineSpacing(0f, 1.1f).setIncludePad(false).build()
             canvas.save(); canvas.translate(0f, y); layout.draw(canvas); canvas.restore()
@@ -220,9 +229,17 @@ class PrinterRepository(
     suspend fun printOrderReceipt(orderWithItems: OrderWithItems): PrintResult = withContext(Dispatchers.IO) {
         val pSetting = getPrinterSettingSync()
         val rSetting = receiptSettingDao?.getReceiptSettingSync() ?: ReceiptSettingEntity()
-        val bitmap = buildReceiptBitmap(orderWithItems, rSetting, pSetting.paperSize)
-        val bytes = bitmapToEscPosBytes(bitmap)
-        return@withContext sendBytesToPrinterHardware(bytes, pSetting)
+
+        // Print KITCHEN COPY
+        val bitmap1 = buildReceiptBitmap(orderWithItems, rSetting, pSetting.paperSize, "KITCHEN COPY")
+        val bytes1 = bitmapToEscPosBytes(bitmap1)
+        val res1 = sendBytesToPrinterHardware(bytes1, pSetting)
+        if (!res1.success) return@withContext res1
+
+        // Print CUSTOMER COPY
+        val bitmap2 = buildReceiptBitmap(orderWithItems, rSetting, pSetting.paperSize, "CUSTOMER COPY")
+        val bytes2 = bitmapToEscPosBytes(bitmap2)
+        return@withContext sendBytesToPrinterHardware(bytes2, pSetting)
     }
 
     private fun bitmapToEscPosBytes(bitmap: Bitmap): ByteArray {

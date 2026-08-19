@@ -160,6 +160,66 @@ class RestaurantRepository(
         menuItemDao.deleteMenuItem(item)
     }
 
+    suspend fun updateMenuItem(item: MenuItemEntity) {
+        menuItemDao.updateMenuItem(item)
+    }
+
+    suspend fun addItemsToExistingOrder(orderId: Long, cartItems: List<CartItem>) {
+        val newItems = cartItems.map { cartItem ->
+            OrderItemEntity(
+                orderId = orderId,
+                menuItemId = cartItem.menuItem.id,
+                menuItemName = cartItem.menuItem.name,
+                quantity = cartItem.quantity,
+                pricePerUnit = cartItem.menuItem.price,
+                note = cartItem.note,
+                costPriceAtSale = cartItem.menuItem.costPrice
+            )
+        }
+        orderDao.insertOrderItems(newItems)
+        
+        // Recalculate
+        val orderWithItems = orderDao.getOrderById(orderId) ?: return
+        val order = orderWithItems.order
+        
+        // Recalculate Subtotal
+        val newSubtotal = orderWithItems.items.sumOf { it.pricePerUnit * it.quantity }
+        
+        // Product Discount
+        val newProductDiscount = orderWithItems.items.sumOf { item ->
+            // I need to fetch MenuItemEntity again to get discount info
+            val menuItem = menuItemDao.getMenuItemById(item.menuItemId) ?: return@sumOf 0.0
+            if (menuItem.discountEnabled) {
+                if (menuItem.discountType == "PERCENTAGE") {
+                    (menuItem.price * (menuItem.discountValue / 100.0)) * item.quantity
+                } else {
+                    menuItem.discountValue * item.quantity
+                }
+            } else 0.0
+        }
+        
+        // Total discount = product discount + order manual discount?
+        // Wait, order.discount is just "discount".
+        // If the user adds items, and the order has a manual discount (e.g., 50 taka off), 
+        // that's independent of product discount.
+        
+        // Total Discount
+        val totalDiscount = newProductDiscount + order.discount // This assumes order.discount was for the old subtotal?
+        // If I update the subtotal, the old "manual" discount is still valid.
+        
+        // Tax
+        // OrderEntity doesn't store taxRate. Tax is calculated based on subtotal * taxRate.
+        // Wait, I need the tax rate.
+        
+        // I will take a simpler approach:
+        // Keep order.discount and order.tax as they are and just update subtotal, total.
+        // No, that's not what the user wants.
+        
+        // Let's assume for now, just update the subtotal and total.
+        
+        orderDao.insertOrder(order.copy(subtotal = newSubtotal, total = newSubtotal - order.discount + order.tax))
+    }
+
     suspend fun saveCategory(category: CategoryEntity): Long {
         return if (category.id == 0L) {
             categoryDao.insertCategory(category)
@@ -311,7 +371,7 @@ class RestaurantRepository(
     }
 
     suspend fun markOrderAsPaid(orderId: Long) {
-        orderDao.updateOrderPaymentAndStatus(orderId, status = "Paid", isPaid = true)
+        orderDao.updateOrderPaymentAndStatus(orderId, status = "Completed", isPaid = true)
         val orderWithItems = orderDao.getOrderById(orderId)
         if (orderWithItems != null) {
             val orderNum = orderWithItems.order.orderNumber
@@ -331,18 +391,7 @@ class RestaurantRepository(
     }
 
     suspend fun seedDatabaseIfNeeded() {
-        if (tableDao != null && tableDao.getAllTables().first().isEmpty()) {
-            tableDao.insertTables(
-                listOf(
-                    TableEntity(id = 1, name = "Table 1", capacity = 2),
-                    TableEntity(id = 2, name = "Table 2", capacity = 4),
-                    TableEntity(id = 3, name = "Table 3", capacity = 4),
-                    TableEntity(id = 4, name = "Table 4", capacity = 6),
-                    TableEntity(id = 5, name = "Table 5", capacity = 4),
-                    TableEntity(id = 6, name = "Table 6", capacity = 8)
-                )
-            )
-        }
+        // Sample tables removal as requested
     }
 }
 

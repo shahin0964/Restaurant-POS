@@ -329,6 +329,14 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    fun updateMenuItemDiscount(item: MenuItemEntity, onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            restaurantRepo.updateMenuItem(item)
+            forceCloudSync()
+            onComplete()
+        }
+    }
+
     fun saveCategory(category: CategoryEntity, onComplete: () -> Unit = {}) {
         viewModelScope.launch {
             restaurantRepo.saveCategory(category)
@@ -607,6 +615,33 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
     private val _selectedOrderForDetails = MutableStateFlow<OrderWithItems?>(null)
     val selectedOrderForDetails: StateFlow<OrderWithItems?> = _selectedOrderForDetails.asStateFlow()
 
+    private val _isAddingToOrder = MutableStateFlow(false)
+    val isAddingToOrder: StateFlow<Boolean> = _isAddingToOrder.asStateFlow()
+
+    fun setIsAddingToOrder(isAdding: Boolean) {
+        _isAddingToOrder.value = isAdding
+    }
+
+    fun addItemsToExistingOrder(onComplete: (Boolean) -> Unit) {
+        val orderId = selectedOrderForDetails.value?.order?.id ?: return
+        val itemsToAdd = _cartItems.value
+        if (itemsToAdd.isEmpty()) {
+            onComplete(false)
+            return
+        }
+
+        viewModelScope.launch {
+            restaurantRepo.addItemsToExistingOrder(orderId, itemsToAdd)
+            clearCart()
+            setIsAddingToOrder(false)
+            // Need to refresh selectedOrderForDetails
+            val updatedOrder = restaurantRepo.getOrderById(orderId)
+            _selectedOrderForDetails.value = updatedOrder
+            forceCloudSync()
+            onComplete(true)
+        }
+    }
+
     private val _selectedMenuItem = MutableStateFlow<MenuItemEntity?>(null)
     val selectedMenuItem: StateFlow<MenuItemEntity?> = _selectedMenuItem.asStateFlow()
 
@@ -622,7 +657,6 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
                 restaurantRepo.clearExistingProductsAndCategories()
                 sharedPrefs.edit().putBoolean("has_removed_existing_products_and_categories_v1", true).apply()
             }
-            restaurantRepo.seedDatabaseIfNeeded()
             checkForGitHubUpdates()
         }
     }
@@ -666,7 +700,20 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun calculateSubtotal(): Double {
-        return _cartItems.value.sumOf { it.menuItem.price * it.quantity }
+        return _cartItems.value.sumOf { cartItem ->
+            val item = cartItem.menuItem
+            val price = if (item.discountEnabled) {
+                val discount = if (item.discountType == "PERCENTAGE") {
+                    item.price * (item.discountValue / 100.0)
+                } else {
+                    item.discountValue
+                }
+                (item.price - discount).coerceAtLeast(0.0)
+            } else {
+                item.price
+            }
+            price * cartItem.quantity
+        }
     }
 
     fun calculateTax(): Double {

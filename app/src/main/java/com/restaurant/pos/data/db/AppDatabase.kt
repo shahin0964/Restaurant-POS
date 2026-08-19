@@ -21,9 +21,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ReceiptSettingEntity::class,
         NotificationEntity::class,
         TableEntity::class,
-        SyncRecordEntity::class
+        SyncRecordEntity::class,
+        StaffFoodEntity::class
     ],
-    version = 16,
+    version = 18,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -39,6 +40,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun notificationDao(): NotificationDao
     abstract fun tableDao(): TableDao
     abstract fun syncRecordDao(): SyncRecordDao
+    abstract fun staffFoodDao(): StaffFoodDao
 
     companion object {
         @Volatile
@@ -282,6 +284,30 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `staff_food` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `staffName` TEXT NOT NULL,
+                        `productName` TEXT NOT NULL,
+                        `quantity` INTEGER NOT NULL,
+                        `unitPrice` REAL NOT NULL,
+                        `totalPrice` REAL NOT NULL,
+                        `timestamp` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+            }
+        }
+
+        private val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE menu_items ADD COLUMN discountEnabled INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE menu_items ADD COLUMN discountValue REAL NOT NULL DEFAULT 0.0")
+                db.execSQL("ALTER TABLE menu_items ADD COLUMN discountType TEXT NOT NULL DEFAULT 'PERCENTAGE'")
+            }
+        }
+
         private fun createSyncTriggers(db: SupportSQLiteDatabase) {
             val tables = listOf("users", "categories", "menu_items", "orders", "order_items", "tables", "expenses", "stock_logs", "offers", "receipt_settings", "printer_settings", "notifications")
             for (table in tables) {
@@ -335,7 +361,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "dynamic_restaurant.db"
                 )
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         super.onCreate(db)

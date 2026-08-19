@@ -37,8 +37,9 @@ fun AddItemCartScreen(
 ) {
     val item by viewModel.selectedMenuItem.collectAsState()
     val cartItems by viewModel.cartItems.collectAsState()
+    val isAddingToOrder by viewModel.isAddingToOrder.collectAsState()
 
-    var quantity by remember { mutableIntStateOf(2) }
+    var quantity by remember { mutableIntStateOf(1) }
 
     val selectedDish = item ?: MenuItemEntity(
         id = 1,
@@ -318,7 +319,16 @@ fun AddItemCartScreen(
                 // ADD TO CART button
                 Button(
                     onClick = {
-                        viewModel.addToCart(selectedDish, quantity)
+                        if (isAddingToOrder) {
+                            viewModel.addItemsToExistingOrder { success ->
+                                if (success) {
+                                    onBack() // Back to OrderDetailsScreen
+                                }
+                            }
+                        } else {
+                            viewModel.addToCart(selectedDish, quantity)
+                            onViewCart()
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = CurrencyGold, contentColor = Color.Black),
                     shape = RoundedCornerShape(12.dp),
@@ -327,7 +337,7 @@ fun AddItemCartScreen(
                         .height(50.dp)
                         .testTag("add_to_cart_btn")
                 ) {
-                    Text(stringResource(R.string.btn_add_to_cart), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(if (isAddingToOrder) "ADD TO ORDER" else stringResource(R.string.btn_add_to_cart), fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))

@@ -16,6 +16,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.restaurant.pos.ui.screens.*
 import com.restaurant.pos.ui.viewmodel.RestaurantViewModel
+import com.restaurant.pos.ui.viewmodel.StaffFoodViewModel
+import com.restaurant.pos.data.db.AppDatabase
+import com.restaurant.pos.data.repository.StaffFoodRepository
 
 object Routes {
     const val SPLASH = "splash"
@@ -43,6 +46,7 @@ object Routes {
     const val BACKUP_RESTORE = "backup_restore"
     const val TABLES = "tables"
     const val APP_UPDATE = "app_update"
+    const val STAFF_FOOD = "staff_food"
 }
 
 
@@ -200,6 +204,9 @@ fun AppNavigation(
         composable(Routes.ORDER_DETAILS) {
             OrderDetailsScreen(
                 viewModel = viewModel,
+                onNavigate = { route ->
+                    handleBottomNav(navController, route)
+                },
                 onBack = {
                     navController.popBackStack()
                 }
@@ -247,6 +254,9 @@ fun AppNavigation(
                 },
                 onOpenStaffUsers = {
                     navController.navigate(Routes.STAFF_USERS)
+                },
+                onOpenStaffFood = {
+                    navController.navigate(Routes.STAFF_FOOD)
                 },
                 onOpenStockInventory = {
                     navController.navigate(Routes.STOCK_INVENTORY)
@@ -319,11 +329,8 @@ fun AppNavigation(
         }
 
         composable(Routes.DISCOUNT_OFFERS) {
-            DiscountOffersScreen(
+            ProductDiscountSettingsScreen(
                 viewModel = viewModel,
-                onNavigate = { route ->
-                    handleBottomNav(navController, route)
-                },
                 onBack = {
                     navController.popBackStack()
                 }
@@ -432,6 +439,22 @@ fun AppNavigation(
                     navController.popBackStack()
                 }
             )
+        }
+        
+        composable(Routes.STAFF_FOOD) {
+            val db = AppDatabase.getInstance(LocalContext.current)
+            val viewModel: StaffFoodViewModel = viewModel(
+                factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                        return StaffFoodViewModel(
+                            StaffFoodRepository(db.staffFoodDao()),
+                            db.menuItemDao(),
+                            db.userDao()
+                        ) as T
+                    }
+                }
+            )
+            StaffFoodScreen(viewModel = viewModel)
         }
     }
     }
