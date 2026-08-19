@@ -225,9 +225,17 @@ fun AppUpdateScreen(
                         if (downloadUrl.isNotEmpty()) {
                             val downloadId = viewModel.updateRepo.startApkDownload(downloadUrl, updateInfo!!.latestVersion)
                             if (downloadId != -1L) {
-                                Toast.makeText(context, "Downloading update APK...", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "Downloading update v${updateInfo!!.latestVersion}... It will open automatically when finished.", Toast.LENGTH_LONG).show()
                             } else {
-                                Toast.makeText(context, "Update download failed.", Toast.LENGTH_LONG).show()
+                                try {
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(downloadUrl)).apply {
+                                        flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                                    }
+                                    context.startActivity(intent)
+                                    Toast.makeText(context, "Opening browser download...", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Update download failed.", Toast.LENGTH_LONG).show()
+                                }
                             }
                         } else {
                             Toast.makeText(context, "Unable to check for updates.", Toast.LENGTH_LONG).show()

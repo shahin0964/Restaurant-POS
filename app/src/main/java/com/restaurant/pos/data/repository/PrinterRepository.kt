@@ -2,31 +2,38 @@ package com.restaurant.pos.data.repository
 
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Typeface
 import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
+import android.os.IBinder
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 import android.util.Log
 import com.restaurant.pos.data.db.OrderWithItems
 import com.restaurant.pos.data.db.PrinterSettingDao
 import com.restaurant.pos.data.db.PrinterSettingEntity
 import com.restaurant.pos.data.db.ReceiptSettingDao
 import com.restaurant.pos.data.db.ReceiptSettingEntity
-import android.content.ComponentName
-import android.content.Intent
-import android.content.ServiceConnection
-import android.os.IBinder
-import android.os.Parcel
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withTimeoutOrNull
-import java.io.File
-import java.io.FileOutputStream
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
 import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -68,9 +75,6 @@ class PrinterRepository(
         receiptSettingDao?.saveReceiptSetting(setting)
     }
 
-    /**
-     * Discovers paired Bluetooth devices (REAL devices only)
-     */
     fun getPairedBluetoothDevices(): List<DiscoveredPrinterDevice> {
         val list = mutableListOf<DiscoveredPrinterDevice>()
         try {
@@ -90,9 +94,6 @@ class PrinterRepository(
         return list
     }
 
-    /**
-     * Discovers connected USB devices (REAL devices only)
-     */
     fun getConnectedUsbDevices(): List<DiscoveredPrinterDevice> {
         val list = mutableListOf<DiscoveredPrinterDevice>()
         try {
@@ -107,9 +108,6 @@ class PrinterRepository(
         return list
     }
 
-    /**
-     * Checks if current hardware is SUNMI or has built-in thermal printer
-     */
     fun isSunmiDevice(): Boolean {
         val manufacturer = android.os.Build.MANUFACTURER ?: ""
         val model = android.os.Build.MODEL ?: ""
@@ -129,325 +127,371 @@ class PrinterRepository(
     }
 
     /**
-     * Generates ESC/POS byte sequence for dynamic test receipt
+     * Converts a rendered bitmap to standard ESC/POS raster image bytes (GS v 0).
+     */
+    private fun bitmapToEscPosBytes(bitmap: Bitmap): ByteArray {
+        val width = bitmap.width
+        val height = bitmap.height
+        val widthBytes = (width + 7) / 8
+        val stream = ByteArrayOutputStream()
+
+        // Initialize printer
+        stream.write(byteArrayOf(0x1B, 0x40))
+        // Center alignment
+        stream.write(byteArrayOf(0x1B, 0x61, 0x01))
+
+        // GS v 0 m xL xH yL yH
+        val xL = (widthBytes % 256).toByte()
+        val xH = (widthBytes / 256).toByte()
+        val yL = (height % 256).toByte()
+        val yH = (height / 256).toByte()
+
+        val header = byteArrayOf(0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH)
+        stream.write(header)
+
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+
+        val rasterData = ByteArray(widthBytes * height)
+        var byteIdx = 0
+
+        for (y in 0 until height) {
+            for (xByte in 0 until widthBytes) {
+                var currentByte = 0
+                for (bit in 0 until 8) {
+                    val x = xByte * 8 + bit
+                    if (x < width) {
+                        val pixel = pixels[y * width + x]
+                        val r = (pixel shr 16) and 0xFF
+                        val g = (pixel shr 8) and 0xFF
+                        val b = pixel and 0xFF
+                        val luminance = (r * 0.299 + g * 0.587 + b * 0.114).toInt()
+                        if (luminance < 128) {
+                            currentByte = currentByte or (0x80 shr bit)
+                        }
+                    }
+                }
+                rasterData[byteIdx++] = currentByte.toByte()
+            }
+        }
+        stream.write(rasterData)
+
+        // Line feeds & full paper cut
+        stream.write(byteArrayOf(0x1B, 0x64, 0x05))
+        stream.write(byteArrayOf(0x1D, 0x56, 0x41, 0x00))
+
+        return stream.toByteArray()
+    }
+
+    /**
+     * Builds Test Receipt directly into a bitmap ensuring Unicode Bangla & all characters render accurately.
      */
     fun buildTestReceiptBytes(
         setting: PrinterSettingEntity,
         receiptSetting: ReceiptSettingEntity
     ): ByteArray {
-        val stream = ByteArrayOutputStream()
-        try {
-            // ESC/POS Init
-            stream.write(byteArrayOf(0x1B, 0x40))
+        val targetWidth = if (setting.paperSize == "80mm") 576 else 384
+        val tempBitmap = Bitmap.createBitmap(targetWidth, 3000, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(tempBitmap)
+        canvas.drawColor(Color.WHITE)
 
-            // Center Align
-            stream.write(byteArrayOf(0x1B, 0x61, 0x01))
-
-            // Double height & width for header
-            stream.write(byteArrayOf(0x1D, 0x21, 0x11))
-            val shopName = if (receiptSetting.showShopName && receiptSetting.shopName.isNotBlank()) receiptSetting.shopName else "RESTAURANT POS"
-            stream.write("$shopName\n".toByteArray(Charsets.UTF_8))
-            
-            // Normal text
-            stream.write(byteArrayOf(0x1D, 0x21, 0x00))
-            stream.write("PRINTER TEST\n".toByteArray(Charsets.UTF_8))
-
-            val divider = if (setting.paperSize == "80mm") {
-                "================================================\n"
-            } else {
-                "================================\n"
-            }
-            stream.write(divider.toByteArray(Charsets.UTF_8))
-
-            // Left Align
-            stream.write(byteArrayOf(0x1B, 0x61, 0x00))
-            stream.write("Connection: ${setting.connectionType}\n".toByteArray(Charsets.UTF_8))
-            
-            val printerLabel = when (setting.connectionType) {
-                "BLUETOOTH" -> if (setting.printerName.isNotBlank()) "${setting.printerName} (${setting.macAddress})" else setting.macAddress
-                "WIFI_LAN" -> "${setting.ipAddress}:${setting.port}"
-                "USB" -> if (setting.printerName.isNotBlank()) setting.printerName else "Attached USB Printer"
-                else -> "SUNMI / POS Built-in Thermal Printer"
-            }
-            stream.write("Printer   : $printerLabel\n".toByteArray(Charsets.UTF_8))
-            stream.write("Paper Size: ${setting.paperSize}\n".toByteArray(Charsets.UTF_8))
-
-            val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-            stream.write("Date/Time : $dateStr\n".toByteArray(Charsets.UTF_8))
-
-            stream.write(divider.toByteArray(Charsets.UTF_8))
-
-            // Center align for status
-            stream.write(byteArrayOf(0x1B, 0x61, 0x01))
-            stream.write(byteArrayOf(0x1B, 0x45, 0x01)) // Bold
-            stream.write("TEST PRINT\nSUCCESS\n".toByteArray(Charsets.UTF_8))
-            stream.write(byteArrayOf(0x1B, 0x45, 0x00))
-
-            if (receiptSetting.showFooter && receiptSetting.footerText.isNotBlank()) {
-                stream.write("\n${receiptSetting.footerText}\n".toByteArray(Charsets.UTF_8))
-            }
-
-            stream.write("\n\n\n".toByteArray(Charsets.UTF_8))
-            // Paper Cut Command
-            stream.write(byteArrayOf(0x1D, 0x56, 0x41, 0x00))
-        } catch (e: Exception) {
-            Log.e("PrinterRepository", "Error formatting test receipt bytes", e)
+        val normalPaint = TextPaint().apply {
+            color = Color.BLACK
+            textSize = 22f
+            isAntiAlias = false
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
         }
-        return stream.toByteArray()
+
+        val boldPaint = TextPaint().apply {
+            color = Color.BLACK
+            textSize = 22f
+            isAntiAlias = false
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        val headerPaint = TextPaint().apply {
+            color = Color.BLACK
+            textSize = 28f
+            isAntiAlias = false
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        var y = 20f
+
+        fun drawCentered(text: String, paint: TextPaint) {
+            val layout = StaticLayout.Builder.obtain(text, 0, text.length, paint, targetWidth)
+                .setAlignment(Layout.Alignment.ALIGN_CENTER)
+                .setLineSpacing(0f, 1.1f)
+                .setIncludePad(false)
+                .build()
+            canvas.save()
+            canvas.translate(0f, y)
+            layout.draw(canvas)
+            canvas.restore()
+            y += layout.height + 8f
+        }
+
+        fun drawDivider(char: String = "-") {
+            val count = if (targetWidth == 576) 48 else 32
+            val line = char.repeat(count)
+            drawCentered(line, normalPaint)
+        }
+
+        fun drawLeftRight(left: String, right: String, isBold: Boolean = false) {
+            val p = if (isBold) boldPaint else normalPaint
+            canvas.drawText(left, 0f, y + p.textSize, p)
+            val rightWidth = p.measureText(right)
+            canvas.drawText(right, targetWidth - rightWidth, y + p.textSize, p)
+            y += p.textSize + 8f
+        }
+
+        val shopName = if (receiptSetting.showShopName && receiptSetting.shopName.isNotBlank()) receiptSetting.shopName else "RESTAURANT POS"
+        drawCentered(shopName, headerPaint)
+        drawCentered("PRINTER TEST", boldPaint)
+        drawDivider("=")
+
+        val printerLabel = when (setting.connectionType) {
+            "BLUETOOTH" -> if (setting.printerName.isNotBlank()) "${setting.printerName} (${setting.macAddress})" else setting.macAddress
+            "WIFI_LAN" -> "${setting.ipAddress}:${setting.port}"
+            "USB" -> if (setting.printerName.isNotBlank()) setting.printerName else "Attached USB Printer"
+            else -> "SUNMI / POS Built-in Thermal"
+        }
+
+        drawLeftRight("Connection", setting.connectionType)
+        drawLeftRight("Printer", printerLabel)
+        drawLeftRight("Paper Size", setting.paperSize)
+        val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+        drawLeftRight("Date/Time", dateStr)
+        drawDivider("=")
+
+        drawCentered("TEST PRINT SUCCESS", boldPaint)
+
+        if (receiptSetting.showFooter && receiptSetting.footerText.isNotBlank()) {
+            drawDivider("-")
+            drawCentered(receiptSetting.footerText, normalPaint)
+        }
+
+        y += 20f
+        val finalHeight = y.toInt()
+        val finalBitmap = Bitmap.createBitmap(tempBitmap, 0, 0, targetWidth, finalHeight)
+        return bitmapToEscPosBytes(finalBitmap)
     }
 
     /**
-     * Generates ESC/POS byte sequence for physical receipt printing based on OrderWithItems and ReceiptSettingEntity
-     * Exactly matches layout from IMG_20260819_024407.jpg
+     * Renders physical receipt with full Unicode Bangla font rendering onto an Android Canvas & exports as raster ESC/POS bytes.
      */
     fun buildReceiptBytes(
         orderWithItems: OrderWithItems,
         receiptSetting: ReceiptSettingEntity,
         paperSize: String = "58mm"
     ): ByteArray {
-        val stream = ByteArrayOutputStream()
-        try {
-            val order = orderWithItems.order
-            val items = orderWithItems.items
-            val is80mm = paperSize == "80mm"
-            val lineLength = if (is80mm) 48 else 32
+        val is80mm = paperSize == "80mm"
+        val targetWidth = if (is80mm) 576 else 384
 
-            val rawSymbol = if (receiptSetting.currencySymbol.isNotBlank()) {
-                receiptSetting.currencySymbol
-            } else if (receiptSetting.currencyCode.isNotBlank()) {
-                receiptSetting.currencyCode
-            } else {
-                "BDT"
-            }
+        val tempBitmap = Bitmap.createBitmap(targetWidth, 5000, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(tempBitmap)
+        canvas.drawColor(Color.WHITE)
 
-            // ESC/POS Thermal printers in standard single-byte code page mode corrupt non-ASCII characters like "৳" into Chinese characters like "唰".
-            // Converting non-ASCII currency symbols to clean printer-safe ASCII string (e.g. "Tk") ensures 100% clean formatting and crisp printing.
-            val currSymbol = when {
-                rawSymbol == "৳" || rawSymbol.contains("\u09F3") -> "Tk"
-                rawSymbol.all { it.code in 32..126 } -> rawSymbol
-                else -> "Tk"
-            }
-
-            fun formatAmount(amount: Double): String {
-                return if (amount % 1.0 == 0.0) {
-                    String.format(Locale.US, "%.0f", amount)
-                } else {
-                    String.format(Locale.US, "%.2f", amount)
-                }
-            }
-
-            fun formatMoney(amount: Double): String {
-                val amtStr = formatAmount(amount)
-                return if (currSymbol.isNotBlank()) "$currSymbol$amtStr" else amtStr
-            }
-
-            // ESC/POS Init
-            stream.write(byteArrayOf(0x1B, 0x40))
-
-            // Center Align for Shop Header
-            stream.write(byteArrayOf(0x1B, 0x61, 0x01))
-
-            // Shop Header
-            if (receiptSetting.showShopName && receiptSetting.shopName.isNotBlank()) {
-                stream.write(byteArrayOf(0x1D, 0x21, 0x11)) // Double height & width
-                stream.write("${receiptSetting.shopName}\n".toByteArray(Charsets.UTF_8))
-                stream.write(byteArrayOf(0x1D, 0x21, 0x00)) // Normal size
-            }
-
-            if (receiptSetting.showAddress && receiptSetting.address.isNotBlank()) {
-                stream.write("${receiptSetting.address}\n".toByteArray(Charsets.UTF_8))
-            }
-
-            if (receiptSetting.showPhone && receiptSetting.phone.isNotBlank()) {
-                stream.write("Tel: ${receiptSetting.phone}\n".toByteArray(Charsets.UTF_8))
-            }
-
-            if (receiptSetting.email.isNotBlank()) {
-                stream.write("Email: ${receiptSetting.email}\n".toByteArray(Charsets.UTF_8))
-            }
-
-            if (receiptSetting.website.isNotBlank()) {
-                stream.write("${receiptSetting.website}\n".toByteArray(Charsets.UTF_8))
-            }
-
-            val topDivider = "=".repeat(lineLength) + "\n"
-            val subDivider = "-".repeat(lineLength) + "\n"
-
-            stream.write(topDivider.toByteArray(Charsets.UTF_8))
-
-            // Left Align for Order Details
-            stream.write(byteArrayOf(0x1B, 0x61, 0x00))
-            
-            if (receiptSetting.showOrderNumber && order.orderNumber.isNotBlank()) {
-                val formattedOrderNo = if (order.orderNumber.startsWith("#")) order.orderNumber else "#${order.orderNumber}"
-                stream.write("Order No: $formattedOrderNo\n".toByteArray(Charsets.UTF_8))
-            }
-
-            if (receiptSetting.showOrderType && order.orderType.isNotBlank()) {
-                val typeWithTable = if (order.tableNumber.isNotBlank()) {
-                    val tbl = if (order.tableNumber.lowercase().startsWith("table")) order.tableNumber else "Table ${order.tableNumber}"
-                    "${order.orderType} ($tbl)"
-                } else {
-                    order.orderType
-                }
-                stream.write("Type    : $typeWithTable\n".toByteArray(Charsets.UTF_8))
-            }
-
-            if (receiptSetting.showCustomerName && order.customerName.isNotBlank()) {
-                stream.write("Customer: ${order.customerName}\n".toByteArray(Charsets.UTF_8))
-            }
-
-            if (receiptSetting.showDateTime && order.timestamp > 0) {
-                val dateStr = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.US).format(Date(order.timestamp))
-                stream.write("Time    : $dateStr\n".toByteArray(Charsets.UTF_8))
-            }
-
-            if (order.note.isNotBlank()) {
-                stream.write("Note    : ${order.note}\n".toByteArray(Charsets.UTF_8))
-            }
-
-            stream.write(subDivider.toByteArray(Charsets.UTF_8))
-
-            // Items List
-            if (receiptSetting.showItems && items.isNotEmpty()) {
-                val itemColLen = if (is80mm) 26 else 18
-                val qtyColLen = if (is80mm) 8 else 5
-                val priceColLen = lineLength - itemColLen - qtyColLen
-
-                val headerStr = String.format(
-                    Locale.US,
-                    "%-${itemColLen}s %${qtyColLen}s %${priceColLen}s\n",
-                    "Item",
-                    "Qty",
-                    "Price"
-                )
-                stream.write(headerStr.toByteArray(Charsets.UTF_8))
-                stream.write(subDivider.toByteArray(Charsets.UTF_8))
-
-                for (item in items) {
-                    val priceVal = item.pricePerUnit * item.quantity
-                    val priceStr = formatMoney(priceVal)
-                    val qtyStr = "x${item.quantity}"
-                    val itemName = item.menuItemName
-
-                    if (itemName.length <= itemColLen) {
-                        val rowStr = String.format(
-                            Locale.US,
-                            "%-${itemColLen}s %${qtyColLen}s %${priceColLen}s\n",
-                            itemName,
-                            qtyStr,
-                            priceStr
-                        )
-                        stream.write(rowStr.toByteArray(Charsets.UTF_8))
-                    } else {
-                        stream.write("$itemName\n".toByteArray(Charsets.UTF_8))
-                        val rowStr = String.format(
-                            Locale.US,
-                            "%-${itemColLen}s %${qtyColLen}s %${priceColLen}s\n",
-                            "",
-                            qtyStr,
-                            priceStr
-                        )
-                        stream.write(rowStr.toByteArray(Charsets.UTF_8))
-                    }
-
-                    if (item.note.isNotBlank()) {
-                        stream.write("  Note: ${item.note}\n".toByteArray(Charsets.UTF_8))
-                    }
-                }
-                stream.write(subDivider.toByteArray(Charsets.UTF_8))
-            }
-
-            // Totals Section (Right Aligned)
-            fun writeRightAlignedRow(text: String, isBold: Boolean = false) {
-                if (isBold) {
-                    stream.write(byteArrayOf(0x1B, 0x45, 0x01)) // Bold ON
-                }
-                val rowStr = String.format(Locale.US, "%${lineLength}s\n", text)
-                stream.write(rowStr.toByteArray(Charsets.UTF_8))
-                if (isBold) {
-                    stream.write(byteArrayOf(0x1B, 0x45, 0x00)) // Bold OFF
-                }
-            }
-
-            if (receiptSetting.showSubtotal) {
-                writeRightAlignedRow("Subtotal: ${formatMoney(order.subtotal)}")
-            }
-
-            if (receiptSetting.showDiscount && order.discount > 0) {
-                writeRightAlignedRow("Discount: -${formatMoney(order.discount)}")
-            }
-
-            if (receiptSetting.showTax) {
-                writeRightAlignedRow("Tax: ${formatMoney(order.tax)}")
-            }
-
-            if (receiptSetting.showTotal) {
-                writeRightAlignedRow("TOTAL: ${formatMoney(order.total)}", isBold = true)
-            }
-
-            // Payment Status Section (Centered)
-            stream.write("\n".toByteArray(Charsets.UTF_8))
-            stream.write(byteArrayOf(0x1B, 0x61, 0x01)) // Center Align
-
-            val paidStatus = if (order.isPaid || order.status.equals("Completed", ignoreCase = true)) "Paid" else "Unpaid"
-            val payMethod = if (order.paymentMethod.isNotBlank()) order.paymentMethod else "Cash"
-            stream.write("Payment : $payMethod ($paidStatus)\n".toByteArray(Charsets.UTF_8))
-
-            stream.write(topDivider.toByteArray(Charsets.UTF_8))
-
-            // Footer
-            if (receiptSetting.showFooter && receiptSetting.footerText.isNotBlank()) {
-                stream.write("${receiptSetting.footerText}\n".toByteArray(Charsets.UTF_8))
-            }
-
-            // Line feeds so cut occurs cleanly after footer
-            stream.write("\n\n\n\n\n\n".toByteArray(Charsets.UTF_8))
-
-            // Cut Paper Command
-            stream.write(byteArrayOf(0x1D, 0x56, 0x41, 0x00))
-        } catch (e: Exception) {
-            Log.e("PrinterRepository", "Error formatting receipt bytes", e)
+        val normalPaint = TextPaint().apply {
+            color = Color.BLACK
+            textSize = 21f
+            isAntiAlias = false
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
         }
-        return stream.toByteArray()
+
+        val boldPaint = TextPaint().apply {
+            color = Color.BLACK
+            textSize = 21f
+            isAntiAlias = false
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        val headerPaint = TextPaint().apply {
+            color = Color.BLACK
+            textSize = 28f
+            isAntiAlias = false
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+
+        var y = 16f
+
+        fun drawCentered(text: String, paint: TextPaint) {
+            val layout = StaticLayout.Builder.obtain(text, 0, text.length, paint, targetWidth)
+                .setAlignment(Layout.Alignment.ALIGN_CENTER)
+                .setLineSpacing(0f, 1.1f)
+                .setIncludePad(false)
+                .build()
+            canvas.save()
+            canvas.translate(0f, y)
+            layout.draw(canvas)
+            canvas.restore()
+            y += layout.height + 6f
+        }
+
+        fun drawDivider(char: String = "-") {
+            val count = if (is80mm) 48 else 32
+            val line = char.repeat(count)
+            drawCentered(line, normalPaint)
+        }
+
+        fun drawLeftRight(left: String, right: String, isBold: Boolean = false) {
+            val p = if (isBold) boldPaint else normalPaint
+            canvas.drawText(left, 0f, y + p.textSize, p)
+            val rightWidth = p.measureText(right)
+            canvas.drawText(right, targetWidth - rightWidth, y + p.textSize, p)
+            y += p.textSize + 8f
+        }
+
+        val currSymbol = if (receiptSetting.currencySymbol.isNotBlank()) receiptSetting.currencySymbol else (receiptSetting.currencyCode.ifBlank { "BDT" })
+
+        fun formatAmount(amount: Double): String {
+            return if (amount % 1.0 == 0.0) {
+                String.format(Locale.US, "%.0f", amount)
+            } else {
+                String.format(Locale.US, "%.2f", amount)
+            }
+        }
+
+        fun formatMoney(amount: Double): String {
+            val amt = formatAmount(amount)
+            return if (currSymbol.isNotBlank()) "$currSymbol $amt" else amt
+        }
+
+        val order = orderWithItems.order
+        val items = orderWithItems.items
+
+        // Header Section
+        if (receiptSetting.showShopName && receiptSetting.shopName.isNotBlank()) {
+            drawCentered(receiptSetting.shopName, headerPaint)
+        }
+        if (receiptSetting.showAddress && receiptSetting.address.isNotBlank()) {
+            drawCentered(receiptSetting.address, normalPaint)
+        }
+        if (receiptSetting.showPhone && receiptSetting.phone.isNotBlank()) {
+            drawCentered("Tel: ${receiptSetting.phone}", normalPaint)
+        }
+        if (receiptSetting.email.isNotBlank()) {
+            drawCentered("Email: ${receiptSetting.email}", normalPaint)
+        }
+        if (receiptSetting.website.isNotBlank()) {
+            drawCentered(receiptSetting.website, normalPaint)
+        }
+
+        drawDivider("=")
+
+        // Order Details
+        if (receiptSetting.showOrderNumber && order.orderNumber.isNotBlank()) {
+            val formattedOrderNo = if (order.orderNumber.startsWith("#")) order.orderNumber else "#${order.orderNumber}"
+            drawLeftRight("Order No:", formattedOrderNo, isBold = true)
+        }
+        if (receiptSetting.showOrderType && order.orderType.isNotBlank()) {
+            val typeWithTable = if (order.tableNumber.isNotBlank()) {
+                val tbl = if (order.tableNumber.lowercase().startsWith("table")) order.tableNumber else "Table ${order.tableNumber}"
+                "${order.orderType} ($tbl)"
+            } else {
+                order.orderType
+            }
+            drawLeftRight("Type:", typeWithTable)
+        }
+        if (receiptSetting.showCustomerName && order.customerName.isNotBlank()) {
+            drawLeftRight("Customer:", order.customerName)
+        }
+        if (receiptSetting.showDateTime && order.timestamp > 0) {
+            val dateStr = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.US).format(Date(order.timestamp))
+            drawLeftRight("Time:", dateStr)
+        }
+        if (order.note.isNotBlank()) {
+            drawLeftRight("Note:", order.note)
+        }
+
+        drawDivider("-")
+
+        // Items Table
+        if (receiptSetting.showItems && items.isNotEmpty()) {
+            val itemColWidth = (targetWidth * 0.55f).toInt()
+            val qtyColWidth = (targetWidth * 0.18f).toInt()
+
+            drawLeftRight("Item", "Qty   Price", isBold = true)
+            drawDivider("-")
+
+            for (item in items) {
+                val priceVal = item.pricePerUnit * item.quantity
+                val priceStr = formatMoney(priceVal)
+                val qtyStr = "x${item.quantity}"
+
+                val itemLayout = StaticLayout.Builder.obtain(item.menuItemName, 0, item.menuItemName.length, normalPaint, itemColWidth)
+                    .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                    .setLineSpacing(0f, 1.1f)
+                    .setIncludePad(false)
+                    .build()
+
+                canvas.save()
+                canvas.translate(0f, y)
+                itemLayout.draw(canvas)
+                canvas.restore()
+
+                val rightSideText = "$qtyStr  $priceStr"
+                val rightWidth = normalPaint.measureText(rightSideText)
+                canvas.drawText(rightSideText, targetWidth - rightWidth, y + normalPaint.textSize, normalPaint)
+
+                y += maxOf(itemLayout.height.toFloat(), normalPaint.textSize) + 8f
+
+                if (item.note.isNotBlank()) {
+                    val noteText = "  (${item.note})"
+                    canvas.drawText(noteText, 0f, y + normalPaint.textSize, normalPaint)
+                    y += normalPaint.textSize + 6f
+                }
+            }
+            drawDivider("-")
+        }
+
+        // Totals Section
+        if (receiptSetting.showSubtotal) {
+            drawLeftRight("Subtotal:", formatMoney(order.subtotal))
+        }
+        if (receiptSetting.showDiscount && order.discount > 0) {
+            drawLeftRight("Discount:", "-${formatMoney(order.discount)}")
+        }
+        if (receiptSetting.showTax) {
+            drawLeftRight("Tax:", formatMoney(order.tax))
+        }
+        if (receiptSetting.showTotal) {
+            drawLeftRight("TOTAL:", formatMoney(order.total), isBold = true)
+        }
+
+        // Payment Details
+        y += 8f
+        val paidStatus = if (order.isPaid || order.status.equals("Completed", ignoreCase = true)) "Paid" else "Unpaid"
+        val payMethod = if (order.paymentMethod.isNotBlank()) order.paymentMethod else "Cash"
+        drawCentered("Payment: $payMethod ($paidStatus)", boldPaint)
+
+        drawDivider("=")
+
+        // Footer
+        if (receiptSetting.showFooter && receiptSetting.footerText.isNotBlank()) {
+            drawCentered(receiptSetting.footerText, normalPaint)
+        }
+
+        y += 24f
+        val finalHeight = y.toInt()
+        val finalBitmap = Bitmap.createBitmap(tempBitmap, 0, 0, targetWidth, finalHeight)
+        return bitmapToEscPosBytes(finalBitmap)
     }
 
-    /**
-     * Performs a REAL Test Print over the selected printer configuration
-     */
     suspend fun printTestReceipt(setting: PrinterSettingEntity): PrintResult = withContext(Dispatchers.IO) {
         val rSetting = receiptSettingDao?.getReceiptSettingSync() ?: ReceiptSettingEntity()
         val bytes = buildTestReceiptBytes(setting, rSetting)
-        
-        android.util.Log.d("DiagnosticAudit", "PRINT TYPE = TEST_RECEIPT")
-        android.util.Log.d("DiagnosticAudit", "BYTE LENGTH = ${bytes.size}")
-        android.util.Log.d("DiagnosticAudit", "TEST BUILDER CALLED = true")
-        
         return@withContext sendBytesToPrinterHardware(bytes, setting)
     }
 
-    /**
-     * Performs a REAL Order Print using saved printer settings
-     */
     suspend fun printOrderReceipt(orderWithItems: OrderWithItems): PrintResult = withContext(Dispatchers.IO) {
         val pSetting = getPrinterSettingSync()
         val rSetting = receiptSettingDao?.getReceiptSettingSync() ?: ReceiptSettingEntity()
         val bytes = buildReceiptBytes(orderWithItems, rSetting, pSetting.paperSize)
-        
-        android.util.Log.d("DiagnosticAudit", "PRINT TYPE = REAL_RECEIPT")
-        android.util.Log.d("DiagnosticAudit", "ORDER ID = ${orderWithItems.order.id}")
-        android.util.Log.d("DiagnosticAudit", "BYTE LENGTH = ${bytes.size}")
-        android.util.Log.d("DiagnosticAudit", "RECEIPT BUILDER = buildReceiptBytes")
-        android.util.Log.d("DiagnosticAudit", "TEST BUILDER CALLED = false")
-        
         return@withContext sendBytesToPrinterHardware(bytes, pSetting)
     }
 
-    /**
-     * Route raw ESC/POS byte sequence to the physical printer hardware socket/endpoint based on connectionType
-     */
     private suspend fun sendBytesToPrinterHardware(bytes: ByteArray, setting: PrinterSettingEntity): PrintResult {
-        android.util.Log.d("DiagnosticAudit", "PRINTER TYPE = ${setting.connectionType}")
         return when (setting.connectionType) {
             "BUILT_IN" -> printToBuiltInPrinter(bytes)
             "BLUETOOTH" -> printToBluetoothPrinter(bytes, setting.macAddress)
@@ -458,7 +502,6 @@ class PrinterRepository(
     }
 
     private suspend fun printToBuiltInPrinter(bytes: ByteArray): PrintResult {
-        // 1. Try Sunmi SDK InnerPrinter via Reflection if available in classpath
         try {
             val innerPrinterClass = try {
                 Class.forName("com.sunmi.peripheral.printer.InnerPrinter")
@@ -472,11 +515,9 @@ class PrinterRepository(
                     val cbClass = try {
                         Class.forName("com.sunmi.peripheral.printer.InnerResultCallback")
                     } catch (_: Exception) { null }
-
                     val sendRawMethod = if (cbClass != null) {
                         try { printerInstance.javaClass.getMethod("sendRAWData", ByteArray::class.java, cbClass) } catch (_: Exception) { null }
                     } else null
-
                     if (sendRawMethod != null && cbClass != null) {
                         val dummyCallback = java.lang.reflect.Proxy.newProxyInstance(
                             cbClass.classLoader,
@@ -491,13 +532,11 @@ class PrinterRepository(
             Log.w("PrinterRepository", "Sunmi InnerPrinter SDK reflection call not available", e)
         }
 
-        // 2. Try binding to Android POS system printer AIDL services (Sunmi / WOYOU / iMin / iPOS)
         val aidlResult = printViaSystemPrinterService(bytes)
         if (aidlResult.success) {
             return aidlResult
         }
 
-        // 3. Try Linux character device nodes common in Android POS terminals (/dev/ttyHSL1, /dev/ttyMT0, /dev/ttyMT1, /dev/usb/lp0)
         val devNodes = listOf(
             "/dev/ttyHSL1",
             "/dev/ttyMT0",
@@ -523,7 +562,6 @@ class PrinterRepository(
             }
         }
 
-        // 4. Try internal loopback POS print service sockets (port 9100 / 9101 on 127.0.0.1 used by local thermal daemons)
         for (port in listOf(9100, 9101, 8888)) {
             try {
                 val socket = Socket()
@@ -535,18 +573,12 @@ class PrinterRepository(
                 os.close()
                 socket.close()
                 return PrintResult(true, "Printed successfully to built-in thermal daemon (127.0.0.1:$port)")
-            } catch (_: Exception) {
-                // Not listening on this loopback port
-            }
+            } catch (_: Exception) {}
         }
 
-        // 5. If none of the actual physical built-in interfaces succeeded
-        return PrintResult(false, "Built-in thermal printer not detected or service unavailable on this device. Please check hardware connection or choose Bluetooth / Wi-Fi / USB.")
+        return PrintResult(false, "Built-in thermal printer not detected or service unavailable on this device.")
     }
 
-    /**
-     * Binds to POS vendor print services (e.g., Sunmi WOYOU service) via AIDL IPC and sends raw ESC/POS byte array
-     */
     private suspend fun printViaSystemPrinterService(bytes: ByteArray): PrintResult {
         val serviceIntents = listOf(
             Intent().apply {
@@ -566,24 +598,17 @@ class PrinterRepository(
                 action = "com.iposprinter.iposprinterservice.IPosPrinterService"
             }
         )
-
         for (intent in serviceIntents) {
             val deferred = CompletableDeferred<PrintResult>()
-            var serviceConnected = false
-
             val conn = object : ServiceConnection {
                 override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
                     if (service == null) {
                         deferred.complete(PrintResult(false, "Printer service binder is null"))
                         return
                     }
-                    serviceConnected = true
                     try {
-                        // Look for sendRAWData or sendRawData method on the AIDL Stub/Proxy
                         val descriptor = service.interfaceDescriptor ?: ""
                         var executed = false
-
-                        // Try calling sendRAWData via reflection on the Stub.asInterface
                         val stubClass = try {
                             Class.forName("${descriptor}\$Stub")
                         } catch (e: ClassNotFoundException) {
@@ -597,7 +622,6 @@ class PrinterRepository(
                                 }
                             }
                         }
-
                         if (stubClass != null) {
                             val asInterface = stubClass.getMethod("asInterface", IBinder::class.java)
                             val proxy = asInterface.invoke(null, service)
@@ -617,7 +641,6 @@ class PrinterRepository(
                                                 arrayOf(cbClass)
                                             ) { _, _, _ -> null }
                                         } catch (_: Exception) { null }
-
                                         try {
                                             if (dummyCb != null) {
                                                 sendRaw.invoke(proxy, bytes, dummyCb)
@@ -635,7 +658,6 @@ class PrinterRepository(
                                 }
                             }
                         }
-
                         if (executed) {
                             deferred.complete(PrintResult(true, "Printed successfully via ${name?.packageName ?: "Built-in POS Service"}"))
                         } else {
@@ -647,33 +669,20 @@ class PrinterRepository(
                     }
                 }
 
-                override fun onServiceDisconnected(name: ComponentName?) {
-                    serviceConnected = false
-                }
+                override fun onServiceDisconnected(name: ComponentName?) {}
             }
-
             try {
                 val bound = context.bindService(intent, conn, Context.BIND_AUTO_CREATE)
                 if (bound) {
-                    val result = withTimeoutOrNull(2500) {
-                        deferred.await()
-                    }
-                    try {
-                        context.unbindService(conn)
-                    } catch (_: Exception) {}
-
-                    if (result != null && result.success) {
-                        return result
-                    }
+                    val result = withTimeoutOrNull(2500) { deferred.await() }
+                    try { context.unbindService(conn) } catch (_: Exception) {}
+                    if (result != null && result.success) return result
                 }
             } catch (e: Exception) {
                 Log.w("PrinterRepository", "Cannot bind to service ${intent.`package`}", e)
-                try {
-                    context.unbindService(conn)
-                } catch (_: Exception) {}
+                try { context.unbindService(conn) } catch (_: Exception) {}
             }
         }
-
         return PrintResult(false, "Could not bind to built-in printer service")
     }
 
@@ -681,34 +690,27 @@ class PrinterRepository(
         if (macAddress.isBlank()) {
             return PrintResult(false, "No Bluetooth printer selected. Please search and select a printer.")
         }
-
         try {
             val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
                 ?: return PrintResult(false, "Bluetooth is not supported on this device")
-
             if (!bluetoothAdapter.isEnabled) {
                 return PrintResult(false, "Bluetooth is turned off on this device")
             }
-
             val device: BluetoothDevice = try {
                 bluetoothAdapter.getRemoteDevice(macAddress)
             } catch (e: IllegalArgumentException) {
                 return PrintResult(false, "Invalid Bluetooth MAC address: $macAddress")
             }
-
-            val uuid = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB") // SPP UUID
+            val uuid = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
             bluetoothAdapter.cancelDiscovery()
-
             val socket = try {
                 device.createRfcommSocketToServiceRecord(uuid)
             } catch (e: SecurityException) {
                 return PrintResult(false, "Bluetooth permission denied")
             }
-
             return try {
                 socket.connect()
                 val os: OutputStream = socket.outputStream
-
                 val chunkSize = 128
                 var offset = 0
                 while (offset < bytes.size) {
@@ -718,7 +720,6 @@ class PrinterRepository(
                     offset += count
                     Thread.sleep(30)
                 }
-
                 Thread.sleep(400)
                 try { os.close() } catch (_: Exception) {}
                 try { socket.close() } catch (_: Exception) {}
@@ -740,14 +741,11 @@ class PrinterRepository(
         if (ipAddress.isBlank()) {
             return PrintResult(false, "Invalid IP address: IP cannot be blank")
         }
-
         val targetPort = if (port in 1..65535) port else 9100
-
         return try {
             val socket = Socket()
             socket.connect(InetSocketAddress(ipAddress, targetPort), 5000)
             val os: OutputStream = socket.outputStream
-
             val chunkSize = 512
             var offset = 0
             while (offset < bytes.size) {
@@ -757,7 +755,6 @@ class PrinterRepository(
                 offset += count
                 Thread.sleep(20)
             }
-
             Thread.sleep(300)
             try { os.close() } catch (_: Exception) {}
             try { socket.close() } catch (_: Exception) {}
@@ -774,55 +771,43 @@ class PrinterRepository(
     private fun printToUsbPrinter(bytes: ByteArray, printerName: String): PrintResult {
         val usbManager = context.getSystemService(Context.USB_SERVICE) as? UsbManager
             ?: return PrintResult(false, "USB Service unavailable")
-
         if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_USB_HOST)) {
             return PrintResult(false, "USB printing is not supported on this device.")
         }
-
         val deviceList = usbManager.deviceList
         if (deviceList.isEmpty()) {
             return PrintResult(false, "No USB printer devices attached to this device")
         }
-
         val targetDevice: UsbDevice? = deviceList.values.firstOrNull { dev ->
             (printerName.isNotBlank() && (dev.deviceName == printerName || dev.productName == printerName)) ||
             dev.deviceClass == UsbConstants.USB_CLASS_PRINTER ||
             (0 until dev.interfaceCount).any { dev.getInterface(it).interfaceClass == UsbConstants.USB_CLASS_PRINTER }
         } ?: deviceList.values.firstOrNull()
-
         if (targetDevice == null) {
             return PrintResult(false, "Target USB printer not found")
         }
-
         if (!usbManager.hasPermission(targetDevice)) {
             return PrintResult(false, "USB permission denied for device ${targetDevice.productName ?: targetDevice.deviceName}")
         }
-
         val usbInterface = (0 until targetDevice.interfaceCount)
             .map { targetDevice.getInterface(it) }
             .firstOrNull { it.interfaceClass == UsbConstants.USB_CLASS_PRINTER }
             ?: targetDevice.getInterface(0)
-
         val endpoint = (0 until usbInterface.endpointCount)
             .map { usbInterface.getEndpoint(it) }
             .firstOrNull { it.direction == UsbConstants.USB_DIR_OUT }
-
         if (endpoint == null) {
             return PrintResult(false, "No USB output endpoint found on target printer")
         }
-
         val connection = usbManager.openDevice(targetDevice)
             ?: return PrintResult(false, "Could not open USB device connection")
-
         return try {
             connection.claimInterface(usbInterface, true)
-
             val maxPacket = endpoint.maxPacketSize.coerceAtLeast(64)
             val chunkSize = minOf(maxPacket, 512)
             var offset = 0
             var totalSent = 0
             var failed = false
-
             while (offset < bytes.size) {
                 val length = minOf(chunkSize, bytes.size - offset)
                 val chunk = bytes.copyOfRange(offset, offset + length)
@@ -834,10 +819,8 @@ class PrinterRepository(
                 totalSent += transferred
                 offset += length
             }
-
             try { connection.releaseInterface(usbInterface) } catch (_: Exception) {}
             try { connection.close() } catch (_: Exception) {}
-
             if (!failed && totalSent > 0) {
                 PrintResult(true, "Printed successfully via USB (${targetDevice.productName ?: targetDevice.deviceName})")
             } else {

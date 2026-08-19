@@ -180,9 +180,51 @@ class GitHubUpdateRepository(private val context: Context) {
                 setTitle("Restaurant POS Update v$version")
                 setDescription("Downloading latest release APK...")
                 setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                setMimeType("application/vnd.android.package-archive")
                 setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "restaurant_pos_v$version.apk")
             }
-            return downloadManager.enqueue(request)
+            val downloadId = downloadManager.enqueue(request)
+
+            val onComplete = object : android.content.BroadcastReceiver() {
+                override fun onReceive(ctxt: Context?, intent: android.content.Intent?) {
+                    val id = intent?.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L) ?: -1L
+                    if (id == downloadId) {
+                        try {
+                            val downloadedFileUri = downloadManager.getUriForDownloadedFile(downloadId)
+                            if (downloadedFileUri != null) {
+                                val installIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                    setDataAndType(downloadedFileUri, "application/vnd.android.package-archive")
+                                    flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                }
+                                context.startActivity(installIntent)
+                            }
+                        } catch (e: Exception) {
+                            Log.e("GitHubUpdateRepo", "Error launching APK installer", e)
+                        } finally {
+                            try {
+                                context.unregisterReceiver(this)
+                            } catch (e: Exception) {
+                                // Ignore unregister errors
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(
+                    onComplete,
+                    android.content.IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+                    Context.RECEIVER_EXPORTED
+                )
+            } else {
+                context.registerReceiver(
+                    onComplete,
+                    android.content.IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+                )
+            }
+
+            return downloadId
         } catch (e: Exception) {
             Log.e("GitHubUpdateRepo", "Failed to enqueue APK download", e)
             return -1L
