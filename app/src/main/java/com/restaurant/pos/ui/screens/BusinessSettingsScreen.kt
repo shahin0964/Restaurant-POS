@@ -700,13 +700,17 @@ fun BusinessSettingsScreen(
                 Card(
                     colors = CardDefaults.cardColors(containerColor = DarkSurface),
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, BorderOutline, RoundedCornerShape(12.dp))
+                        .testTag("business_discount_settings_card")
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onNavigate("discount_offers") }
-                            .padding(16.dp),
+                            .padding(16.dp)
+                            .testTag("business_discount_settings_row"),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {

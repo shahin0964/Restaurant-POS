@@ -44,6 +44,8 @@ fun OrderSummaryScreen(
 
     var selectedPaymentMethod by remember { mutableStateOf("Cash") }
     var isPlacing by remember { mutableStateOf(false) }
+    var showDiscountDialog by remember { mutableStateOf(false) }
+    var discountInputText by remember { mutableStateOf("") }
 
     val subtotal = viewModel.calculateSubtotal()
     val total = viewModel.calculateTotal()
@@ -208,7 +210,42 @@ fun OrderSummaryScreen(
                 Column(modifier = Modifier.padding(14.dp)) {
                     SummaryRow(stringResource(R.string.lbl_subtotal), "৳ ${formatAmount(subtotal)}")
                     Spacer(modifier = Modifier.height(8.dp))
-                    SummaryRow(stringResource(R.string.lbl_discount), "৳ ${formatAmount(discount)}")
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable {
+                                discountInputText = if (discount > 0.0) formatAmount(discount) else ""
+                                showDiscountDialog = true
+                            }
+                            .padding(vertical = 2.dp)
+                            .testTag("order_discount_row"),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.lbl_discount),
+                                color = TextSecondary,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                text = if (discount > 0.0) "(Edit)" else "(Add manual)",
+                                color = CurrencyGold.copy(alpha = 0.8f),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        Text(
+                            text = "৳ ${formatAmount(discount)}",
+                            color = if (discount > 0.0) CurrencyGold else TextPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                     SummaryRow(stringResource(R.string.lbl_vat), "৳ ${formatAmount(tax)}")
                     HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = BorderOutline)
@@ -268,6 +305,87 @@ fun OrderSummaryScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
         }
+    }
+
+    if (showDiscountDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscountDialog = false },
+            title = {
+                Text(
+                    text = "Manual Discount",
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Enter discount amount in ৳ (default is 0.00):",
+                        color = TextSecondary,
+                        fontSize = 13.sp
+                    )
+                    OutlinedTextField(
+                        value = discountInputText,
+                        onValueChange = { discountInputText = it },
+                        placeholder = { Text("0.00", color = TextMuted) },
+                        prefix = { Text("৳ ", color = CurrencyGold, fontWeight = FontWeight.Bold) },
+                        singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = DarkSurfaceVariant,
+                            unfocusedContainerColor = DarkSurfaceVariant,
+                            focusedBorderColor = CurrencyGold,
+                            unfocusedBorderColor = BorderOutline,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("manual_discount_input")
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val parsed = discountInputText.toDoubleOrNull() ?: 0.0
+                        viewModel.setDiscount(parsed.coerceAtLeast(0.0))
+                        showDiscountDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CurrencyGold,
+                        contentColor = Color.Black
+                    ),
+                    modifier = Modifier.testTag("apply_discount_btn")
+                ) {
+                    Text("Apply", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(
+                        onClick = {
+                            viewModel.setDiscount(0.0)
+                            showDiscountDialog = false
+                        },
+                        modifier = Modifier.testTag("clear_discount_btn")
+                    ) {
+                        Text("Clear (0.00)", color = StatusCancelled)
+                    }
+                    TextButton(
+                        onClick = { showDiscountDialog = false },
+                        modifier = Modifier.testTag("cancel_discount_btn")
+                    ) {
+                        Text("Cancel", color = TextMuted)
+                    }
+                }
+            },
+            containerColor = DarkSurface,
+            shape = RoundedCornerShape(12.dp)
+        )
     }
 }
 
