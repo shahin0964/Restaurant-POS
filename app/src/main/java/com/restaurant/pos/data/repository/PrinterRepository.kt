@@ -213,139 +213,16 @@ class PrinterRepository(
     suspend fun printTestReceipt(setting: PrinterSettingEntity): PrintResult = withContext(Dispatchers.IO) {
         val rSetting = receiptSettingDao?.getReceiptSettingSync() ?: ReceiptSettingEntity()
         val bitmap = buildTestReceiptBitmap(setting, rSetting)
-        return@withContext printBitmap(bitmap, setting)
+        val bytes = bitmapToEscPosBytes(bitmap)
+        return@withContext sendBytesToPrinterHardware(bytes, setting)
     }
 
     suspend fun printOrderReceipt(orderWithItems: OrderWithItems): PrintResult = withContext(Dispatchers.IO) {
         val pSetting = getPrinterSettingSync()
         val rSetting = receiptSettingDao?.getReceiptSettingSync() ?: ReceiptSettingEntity()
         val bitmap = buildReceiptBitmap(orderWithItems, rSetting, pSetting.paperSize)
-        return@withContext printBitmap(bitmap, pSetting)
-    }
-
-    private suspend fun printBitmap(bitmap: Bitmap, setting: PrinterSettingEntity): PrintResult {
-        if (setting.connectionType == "BUILT_IN") {
-            val sunmiRes = printBitmapViaSunmiService(bitmap)
-            if (sunmiRes.success) return sunmiRes
-
-            // If AIDL fails, fallback to direct device nodes
-            val bytes = bitmapToEscPosBytes(bitmap)
-            val fallbackRes = printToBuiltInHardwareNodes(bytes)
-            if (fallbackRes.success) return fallbackRes
-            return sunmiRes
-        }
-
         val bytes = bitmapToEscPosBytes(bitmap)
-        return sendBytesToPrinterHardware(bytes, setting)
-    }
-
-    private suspend fun printBitmapViaSunmiService(bitmap: Bitmap): PrintResult {
-        val serviceIntents = listOf(
-            Intent().apply {
-                setPackage("woyou.aidlservice.jiuiv5")
-                action = "woyou.aidlservice.jiuiv5.IWoyouService"
-            },
-            Intent().apply {
-                setPackage("com.sunmi.peripheral.printer")
-                action = "com.sunmi.peripheral.printer.SunmiPrinterService"
-            },
-            Intent().apply {
-                setPackage("com.pos.printer.service")
-                action = "com.pos.printer.service.PrinterService"
-            }
-        )
-
-        for (intent in serviceIntents) {
-            val deferred = CompletableDeferred<PrintResult>()
-            val conn = object : ServiceConnection {
-                override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-                    if (service == null) {
-                        deferred.complete(PrintResult(false, "Printer service binder is null"))
-                        return
-                    }
-                    try {
-                        val descriptor = service.interfaceDescriptor ?: ""
-                        val stubClass = try {
-                            Class.forName("${descriptor}\$Stub")
-                        } catch (_: Exception) {
-                            try {
-                                Class.forName("woyou.aidlservice.jiuiv5.IWoyouService\$Stub")
-                            } catch (_: Exception) {
-                                null
-                            }
-                        }
-
-                        if (stubClass != null) {
-                            val asInterface = stubClass.getMethod("asInterface", IBinder::class.java)
-                            val proxy = asInterface.invoke(null, service)
-                            if (proxy != null) {
-                                val methods = proxy.javaClass.methods
-                                val printBitmapMethod = methods.firstOrNull {
-                                    it.name.equals("printBitmap", true) || it.name.equals("printBitmapCustom", true)
-                                }
-                                val lineWrapMethod = methods.firstOrNull { it.name.equals("lineWrap", true) }
-
-                                if (printBitmapMethod != null) {
-                                    val params = printBitmapMethod.parameterTypes
-                                    if (params.size == 2 && params[0] == Bitmap::class.java) {
-                                        val cbClass = params[1]
-                                        val dummyCb = java.lang.reflect.Proxy.newProxyInstance(
-                                            cbClass.classLoader,
-                                            arrayOf(cbClass)
-                                        ) { _, _, _ -> null }
-                                        printBitmapMethod.invoke(proxy, bitmap, dummyCb)
-                                    } else if (params.size == 1 && params[0] == Bitmap::class.java) {
-                                        printBitmapMethod.invoke(proxy, bitmap)
-                                    } else if (params.size == 3 && params[0] == Bitmap::class.java) {
-                                        val cbClass = params[2]
-                                        val dummyCb = java.lang.reflect.Proxy.newProxyInstance(
-                                            cbClass.classLoader,
-                                            arrayOf(cbClass)
-                                        ) { _, _, _ -> null }
-                                        printBitmapMethod.invoke(proxy, bitmap, 0, dummyCb)
-                                    }
-
-                                    try {
-                                        if (lineWrapMethod != null) {
-                                            val lParams = lineWrapMethod.parameterTypes
-                                            if (lParams.size == 2 && lParams[0] == Int::class.javaPrimitiveType) {
-                                                val cbClass = lParams[1]
-                                                val dummyCb = java.lang.reflect.Proxy.newProxyInstance(
-                                                    cbClass.classLoader,
-                                                    arrayOf(cbClass)
-                                                ) { _, _, _ -> null }
-                                                lineWrapMethod.invoke(proxy, 4, dummyCb)
-                                            }
-                                        }
-                                    } catch (_: Exception) {}
-
-                                    deferred.complete(PrintResult(true, "Printed successfully via Sunmi Service"))
-                                    return
-                                }
-                            }
-                        }
-                        deferred.complete(PrintResult(false, "Sunmi print method not found"))
-                    } catch (e: Throwable) {
-                        deferred.complete(PrintResult(false, "Sunmi error: ${e.message}"))
-                    }
-                }
-
-                override fun onServiceDisconnected(name: ComponentName?) {}
-            }
-
-            try {
-                val bound = context.bindService(intent, conn, Context.BIND_AUTO_CREATE)
-                if (bound) {
-                    val result = withTimeoutOrNull(4000) { deferred.await() }
-                    try { context.unbindService(conn) } catch (_: Exception) {}
-                    if (result != null && result.success) return result
-                }
-            } catch (_: Exception) {
-                try { context.unbindService(conn) } catch (_: Exception) {}
-            }
-        }
-
-        return PrintResult(false, "Built-in printer unavailable on this device.")
+        return@withContext sendBytesToPrinterHardware(bytes, pSetting)
     }
 
     private fun bitmapToEscPosBytes(bitmap: Bitmap): ByteArray {
@@ -420,7 +297,7 @@ class PrinterRepository(
 
     private suspend fun sendBytesToPrinterHardware(bytes: ByteArray, setting: PrinterSettingEntity): PrintResult {
         return when (setting.connectionType) {
-            "BUILT_IN" -> printToBuiltInHardwareNodes(bytes)
+            "BUILT_IN" -> printViaSunmiAidlDirect(bytes)
             "BLUETOOTH" -> printToBluetoothPrinter(bytes, setting.macAddress)
             "WIFI_LAN" -> printToWifiPrinter(bytes, setting.ipAddress, setting.port)
             "USB" -> printToUsbPrinter(bytes, setting.printerName)
@@ -428,17 +305,72 @@ class PrinterRepository(
         }
     }
 
-    private suspend fun printToBuiltInHardwareNodes(bytes: ByteArray): PrintResult {
-        val devNodes = listOf(
-            "/dev/ttyHSL1",
-            "/dev/ttyMT0",
-            "/dev/ttyMT1",
-            "/dev/ttyS1",
-            "/dev/ttyS3",
-            "/dev/usb/lp0",
-            "/dev/usb/lp1",
-            "/dev/printer"
+    private suspend fun printViaSunmiAidlDirect(bytes: ByteArray): PrintResult {
+        val serviceIntents = listOf(
+            Intent().apply {
+                setPackage("woyou.aidlservice.jiuiv5")
+                action = "woyou.aidlservice.jiuiv5.IWoyouService"
+            },
+            Intent().apply {
+                setPackage("com.sunmi.peripheral.printer")
+                action = "com.sunmi.peripheral.printer.SunmiPrinterService"
+            }
         )
+
+        for (intent in serviceIntents) {
+            val deferred = CompletableDeferred<PrintResult>()
+            val conn = object : ServiceConnection {
+                override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+                    if (service == null) {
+                        deferred.complete(PrintResult(false, "Service binder is null"))
+                        return
+                    }
+                    try {
+                        val descriptor = service.interfaceDescriptor ?: "woyou.aidlservice.jiuiv5.IWoyouService"
+                        val stubClass = try {
+                            Class.forName("${descriptor}\$Stub")
+                        } catch (_: Exception) {
+                            Class.forName("woyou.aidlservice.jiuiv5.IWoyouService\$Stub")
+                        }
+
+                        val asInterface = stubClass.getMethod("asInterface", IBinder::class.java)
+                        val proxy = asInterface.invoke(null, service)
+                        if (proxy != null) {
+                            val sendRaw = proxy.javaClass.methods.firstOrNull { it.name.equals("sendRAWData", true) }
+                            if (sendRaw != null) {
+                                val params = sendRaw.parameterTypes
+                                if (params.size == 1) {
+                                    sendRaw.invoke(proxy, bytes)
+                                } else if (params.size == 2) {
+                                    sendRaw.invoke(proxy, bytes, null)
+                                }
+                                deferred.complete(PrintResult(true, "Printed successfully on SUNMI V2 PRO"))
+                                return
+                            }
+                        }
+                        deferred.complete(PrintResult(false, "sendRAWData method not found"))
+                    } catch (e: Throwable) {
+                        deferred.complete(PrintResult(false, "Sunmi error: ${e.message}"))
+                    }
+                }
+
+                override fun onServiceDisconnected(name: ComponentName?) {}
+            }
+
+            try {
+                val bound = context.bindService(intent, conn, Context.BIND_AUTO_CREATE)
+                if (bound) {
+                    val result = withTimeoutOrNull(4000) { deferred.await() }
+                    try { context.unbindService(conn) } catch (_: Exception) {}
+                    if (result != null && result.success) return result
+                }
+            } catch (_: Exception) {
+                try { context.unbindService(conn) } catch (_: Exception) {}
+            }
+        }
+
+        // Hardware device node fallback
+        val devNodes = listOf("/dev/ttyHSL1", "/dev/ttyMT0", "/dev/ttyS1", "/dev/usb/lp0", "/dev/printer")
         for (nodePath in devNodes) {
             val file = File(nodePath)
             if (file.exists() && file.canWrite()) {
@@ -447,69 +379,40 @@ class PrinterRepository(
                         fos.write(bytes)
                         fos.flush()
                     }
-                    return PrintResult(true, "Printed successfully to POS hardware port ($nodePath)")
+                    return PrintResult(true, "Printed successfully via hardware port")
                 } catch (_: Exception) {}
             }
-        }
-
-        for (port in listOf(9100, 9101, 8888)) {
-            try {
-                val socket = Socket()
-                socket.connect(InetSocketAddress("127.0.0.1", port), 800)
-                val os = socket.outputStream
-                os.write(bytes)
-                os.flush()
-                Thread.sleep(200)
-                os.close()
-                socket.close()
-                return PrintResult(true, "Printed successfully to built-in thermal daemon (127.0.0.1:$port)")
-            } catch (_: Exception) {}
         }
 
         return PrintResult(false, "Built-in printer unavailable on this device.")
     }
 
     private fun printToBluetoothPrinter(bytes: ByteArray, macAddress: String): PrintResult {
-        if (macAddress.isBlank()) {
-            return PrintResult(false, "No Bluetooth printer selected.")
-        }
+        if (macAddress.isBlank()) return PrintResult(false, "No Bluetooth printer selected.")
         try {
-            val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-                ?: return PrintResult(false, "Bluetooth is not supported on this device")
-            if (!bluetoothAdapter.isEnabled) {
-                return PrintResult(false, "Bluetooth is turned off")
-            }
-            val device: BluetoothDevice = try {
-                bluetoothAdapter.getRemoteDevice(macAddress)
-            } catch (_: IllegalArgumentException) {
-                return PrintResult(false, "Invalid Bluetooth MAC address: $macAddress")
-            }
+            val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter() ?: return PrintResult(false, "Bluetooth unsupported")
+            if (!bluetoothAdapter.isEnabled) return PrintResult(false, "Bluetooth is turned off")
+            val device: BluetoothDevice = bluetoothAdapter.getRemoteDevice(macAddress)
             val uuid = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
             bluetoothAdapter.cancelDiscovery()
-            val socket = try {
-                device.createRfcommSocketToServiceRecord(uuid)
-            } catch (_: SecurityException) {
-                return PrintResult(false, "Bluetooth permission denied")
-            }
+            val socket = device.createRfcommSocketToServiceRecord(uuid)
             return try {
                 socket.connect()
                 val os: OutputStream = socket.outputStream
-                val chunkSize = 128
                 var offset = 0
                 while (offset < bytes.size) {
-                    val count = minOf(chunkSize, bytes.size - offset)
+                    val count = minOf(128, bytes.size - offset)
                     os.write(bytes, offset, count)
                     os.flush()
                     offset += count
                     Thread.sleep(30)
                 }
                 Thread.sleep(400)
-                try { os.close() } catch (_: Exception) {}
                 try { socket.close() } catch (_: Exception) {}
-                PrintResult(true, "Printed successfully via Bluetooth (${device.name ?: macAddress})")
+                PrintResult(true, "Printed successfully via Bluetooth")
             } catch (e: Exception) {
                 try { socket.close() } catch (_: Exception) {}
-                PrintResult(false, "Bluetooth connection failed: ${e.message}")
+                PrintResult(false, "Bluetooth error: ${e.message}")
             }
         } catch (e: Exception) {
             return PrintResult(false, "Bluetooth error: ${e.message}")
@@ -517,90 +420,48 @@ class PrinterRepository(
     }
 
     private fun printToWifiPrinter(bytes: ByteArray, ipAddress: String, port: Int): PrintResult {
-        if (ipAddress.isBlank()) {
-            return PrintResult(false, "Invalid IP address")
-        }
+        if (ipAddress.isBlank()) return PrintResult(false, "Invalid IP address")
         val targetPort = if (port in 1..65535) port else 9100
         return try {
             val socket = Socket()
             socket.connect(InetSocketAddress(ipAddress, targetPort), 5000)
             val os: OutputStream = socket.outputStream
-            val chunkSize = 512
             var offset = 0
             while (offset < bytes.size) {
-                val count = minOf(chunkSize, bytes.size - offset)
+                val count = minOf(512, bytes.size - offset)
                 os.write(bytes, offset, count)
                 os.flush()
                 offset += count
                 Thread.sleep(20)
             }
             Thread.sleep(300)
-            try { os.close() } catch (_: Exception) {}
             try { socket.close() } catch (_: Exception) {}
-            PrintResult(true, "Printed successfully via Wi-Fi ($ipAddress:$targetPort)")
+            PrintResult(true, "Printed successfully via Wi-Fi")
         } catch (e: Exception) {
             PrintResult(false, "Wi-Fi connection failed: ${e.message}")
         }
     }
 
     private fun printToUsbPrinter(bytes: ByteArray, printerName: String): PrintResult {
-        val usbManager = context.getSystemService(Context.USB_SERVICE) as? UsbManager
-            ?: return PrintResult(false, "USB Service unavailable")
-        if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_USB_HOST)) {
-            return PrintResult(false, "USB printing not supported.")
-        }
+        val usbManager = context.getSystemService(Context.USB_SERVICE) as? UsbManager ?: return PrintResult(false, "USB unavailable")
         val deviceList = usbManager.deviceList
-        if (deviceList.isEmpty()) {
-            return PrintResult(false, "No USB printer attached")
-        }
-        val targetDevice: UsbDevice? = deviceList.values.firstOrNull { dev ->
-            (printerName.isNotBlank() && (dev.deviceName == printerName || dev.productName == printerName)) ||
-                    dev.deviceClass == UsbConstants.USB_CLASS_PRINTER ||
-                    (0 until dev.interfaceCount).any { dev.getInterface(it).interfaceClass == UsbConstants.USB_CLASS_PRINTER }
-        } ?: deviceList.values.firstOrNull()
-        if (targetDevice == null) {
-            return PrintResult(false, "Target USB printer not found")
-        }
-        if (!usbManager.hasPermission(targetDevice)) {
-            return PrintResult(false, "USB permission denied")
-        }
-        val usbInterface = (0 until targetDevice.interfaceCount)
-            .map { targetDevice.getInterface(it) }
-            .firstOrNull { it.interfaceClass == UsbConstants.USB_CLASS_PRINTER }
-            ?: targetDevice.getInterface(0)
-        val endpoint = (0 until usbInterface.endpointCount)
-            .map { usbInterface.getEndpoint(it) }
-            .firstOrNull { it.direction == UsbConstants.USB_DIR_OUT }
-        if (endpoint == null) {
-            return PrintResult(false, "No USB output endpoint found")
-        }
-        val connection = usbManager.openDevice(targetDevice)
-            ?: return PrintResult(false, "Could not open USB connection")
+        if (deviceList.isEmpty()) return PrintResult(false, "No USB printer attached")
+        val devFound: UsbDevice = deviceList.values.firstOrNull { dev ->
+            dev.deviceClass == UsbConstants.USB_CLASS_PRINTER || (0 until dev.interfaceCount).any { dev.getInterface(it).interfaceClass == UsbConstants.USB_CLASS_PRINTER }
+        } ?: deviceList.values.firstOrNull() ?: return PrintResult(false, "Target USB printer not found")
+        val usbInterface = (0 until devFound.interfaceCount).map { devFound.getInterface(it) }.firstOrNull { it.interfaceClass == UsbConstants.USB_CLASS_PRINTER } ?: devFound.getInterface(0)
+        val endpoint = (0 until usbInterface.endpointCount).map { usbInterface.getEndpoint(it) }.firstOrNull { it.direction == UsbConstants.USB_DIR_OUT } ?: return PrintResult(false, "No USB output endpoint")
+        val connection = usbManager.openDevice(devFound) ?: return PrintResult(false, "Could not open USB connection")
         return try {
             connection.claimInterface(usbInterface, true)
-            val maxPacket = endpoint.maxPacketSize.coerceAtLeast(64)
-            val chunkSize = minOf(maxPacket, 512)
             var offset = 0
-            var totalSent = 0
-            var failed = false
             while (offset < bytes.size) {
-                val length = minOf(chunkSize, bytes.size - offset)
-                val chunk = bytes.copyOfRange(offset, offset + length)
-                val transferred = connection.bulkTransfer(endpoint, chunk, length, 3000)
-                if (transferred < 0) {
-                    failed = true
-                    break
-                }
-                totalSent += transferred
-                offset += length
+                val count = minOf(512, bytes.size - offset)
+                connection.bulkTransfer(endpoint, bytes.copyOfRange(offset, offset + count), count, 3000)
+                offset += count
             }
-            try { connection.releaseInterface(usbInterface) } catch (_: Exception) {}
             try { connection.close() } catch (_: Exception) {}
-            if (!failed && totalSent > 0) {
-                PrintResult(true, "Printed successfully via USB (${targetDevice.productName ?: targetDevice.deviceName})")
-            } else {
-                PrintResult(false, "USB printer rejected transfer")
-            }
+            PrintResult(true, "Printed successfully via USB")
         } catch (e: Exception) {
             try { connection.close() } catch (_: Exception) {}
             PrintResult(false, "USB print failed: ${e.message}")
