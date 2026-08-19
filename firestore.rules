@@ -66,16 +66,24 @@ service cloud.firestore {
       // -------------------------------------------------------
       // CREATE
       //
-      // 1. User can create their own initial profile.
-      // 2. Administrator can create Staff profiles (role must be 'Staff').
+      // 1. User can create their own initial profile (non-privileged role only).
+      // 2. Administrator can create user profiles.
       // -------------------------------------------------------
 
       allow create: if isAuthenticated() && (
-        request.auth.uid == userId ||
+        (
+          request.auth.uid == userId &&
+          (
+          !('role' in request.resource.data) ||
+          !(request.resource.data.role in [
+            'Administrator', 'ADMINISTRATOR', 'Admin', 'ADMIN',
+            'Manager', 'MANAGER'
+          ])
+          )
+        ) ||
         (
           isAuthorized() &&
-          isAdmin() &&
-          request.resource.data.role == 'Staff'
+          isAdmin()
         )
       );
 

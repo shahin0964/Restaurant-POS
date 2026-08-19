@@ -92,7 +92,6 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
@@ -106,10 +105,9 @@ jobs:
             echo "::error::KEYSTORE_BASE64 GitHub Secret is missing!"
             exit 1
           fi
-          
-          STORE_PASS="${STORE_PASSWORD:-${KEYSTORE_PASSWORD:-}}"
-          if [ -z "$STORE_PASS" ]; then
-            echo "::error::KEYSTORE_PASSWORD or STORE_PASSWORD GitHub Secret is missing!"
+
+          if [ -z "${KEYSTORE_PASSWORD:-}" ]; then
+            echo "::error::KEYSTORE_PASSWORD GitHub Secret is missing!"
             exit 1
           fi
 
@@ -147,21 +145,22 @@ jobs:
 
           echo "Keystore Base64 decoded successfully."
 
-          # Verify that the decoded file is an actual readable keystore
-          # and that the requested alias exists.
+          # Cryptographically verify that the decoded file is a readable keystore,
+          # KEY_ALIAS exists, and KEY_PASSWORD unlocks the private key entry.
           if ! keytool \
-            -list \
+            -certreq \
             -keystore "$KEYSTORE_PATH" \
-            -storepass "$STORE_PASS" \
+            -storepass "$KEYSTORE_PASSWORD" \
             -alias "$KEY_ALIAS" \
+            -keypass "$KEY_PASSWORD" \
             > /dev/null 2>&1; then
 
-            echo "::error::Decoded keystore is invalid, the password is incorrect, or KEY_ALIAS does not exist!"
+            echo "::error::Cryptographic validation failed! Decoded keystore is invalid, KEYSTORE_PASSWORD or KEY_PASSWORD is incorrect, or KEY_ALIAS does not exist!"
             rm -f "$KEYSTORE_PATH"
             exit 1
           fi
 
-          echo "Keystore and alias verification successful."
+          echo "Keystore, alias, and KEY_PASSWORD cryptographic validation successful."
 
           # Export the exact absolute path for later workflow steps.
           echo "KEYSTORE_PATH=${KEYSTORE_PATH}" >> "$GITHUB_ENV"
@@ -183,9 +182,8 @@ jobs:
             echo "Restoring google-services.json from GOOGLE_SERVICES_BASE64 secret..."
             printf '%s' "$GOOGLE_SERVICES_BASE64" | base64 --decode > app/google-services.json
           else
-            echo "Writing default project app/google-services.json..."
-            mkdir -p app
-            echo 'ewogICJwcm9qZWN0X2luZm8iOiB7CiAgICAicHJvamVjdF9udW1iZXIiOiAiNDE4MDkxODIwMjE1IiwKICAgICJwcm9qZWN0X2lkIjogInJlc3RhdXJhbnQtcG9zLTk5ZDU3IiwKICAgICJzdG9yYWdlX2J1Y2tldCI6ICJyZXN0YXVyYW50LXBvcy05OWQ1Ny5maXJlYmFzZXN0b3JhZ2UuYXBwIgogIH0sCiAgImNsaWVudCI6IFsKICAgIHsKICAgICAgImNsaWVudF9pbmZvIjogewogICAgICAgICJtb2JpbGVzZGtfYXBwX2lkIjogIjE6NDE4MDkxODIwMjE1OmFuZHJvaWQ6NjA0ZGQyZmJhMjNmMGJkOTY0ZDkzMiIsCiAgICAgICAgImFuZHJvaWRfY2xpZW50X2luZm8iOiB7CiAgICAgICAgICAicGFja2FnZV9uYW1lIjogImNvbS5yZXN0YXVyYW50LnBvcyIKICAgICAgICB9CiAgICAgIH0sCiAgICAgICJvYXV0aF9jbGllbnQiOiBbCiAgICAgICAgewogICAgICAgICAgImNsaWVudF9pZCI6ICI0MTgwOTE4MjAyMTUtajA3cWh2OG5vZXFxbm1sdDFzZDlldTZwNGZsMGpoYzcuYXBwcy5nb29nbGV1c2VyY29udGVudC5jb20iLAogICAgICAgICAgImNsaWVudF90eXBlIjogMSwKICAgICAgICAgICJhbmRyb2lkX2luZm8iOiB7CiAgICAgICAgICAgICJwYWNrYWdlX25hbWUiOiAiY29tLnJlc3RhdXJhbnQucG9zIiwKICAgICAgICAgICAgImNlcnRpZmljYXRlX2hhc2giOiAiYzFhYjBjOGE0NGZiNjE5ZDI1ZGEyODFmYjAwNmNkNmEzNWIwZDExZSIKICAgICAgICAgIH0KICAgICAgICB9LAogICAgICAgIHsKICAgICAgICAgICJjbGllbnRfaWQiOiAiNDE4MDkxODIwMjE1LWcwMGhxNzc5a2N2MG5rYzFqYmt1NmkwNGxzcWxpdWhmLmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29tIiwKICAgICAgICAgICJjbGllbnRfdHlwZSI6IDMKICAgICAgICB9CiAgICAgIF0sCiAgICAgICJhcGlfa2V5IjogWwogICAgICAgIHsKICAgICAgICAgICJjdXJyZW50X2tleSI6ICJBSXphU3lEWjg5WHpyaml0U0IyVElIOXUtSkdEU2ZFVnExalZCaVUiCiAgICAgICAgfQogICAgICBdLAogICAgICAic2VydmljZXMiOiB7CiAgICAgICAgImFwcGludml0ZV9zZXJ2aWNlIjogewogICAgICAgICAgIm90aGVyX3BsYXRmb3JtX29hdXRoX2NsaWVudCI6IFsKICAgICAgICAgICAgewogICAgICAgICAgICAgICJjbGllbnRfaWQiOiAiNDE4MDkxODIwMjE1LWcwMGhxNzc5a2N2MG5rYzFqYmt1NmkwNGxzcWxpdWhmLmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29tIiwKICAgICAgICAgICAgICAiY2xpZW50X3R5cGUiOiAzCiAgICAgICAgICAgIH0KICAgICAgICAgIF0KICAgICAgICB9CiAgICAgIH0KICAgIH0KICBdLAogICJjb25maWd1cmF0aW9uX3ZlcnNpb24iOiAiMSIKfQ==' | base64 --decode > app/google-services.json
+            echo "::error::Required Firebase configuration (app/google-services.json or GOOGLE_SERVICES_JSON/GOOGLE_SERVICES_BASE64 secret) is missing!"
+            exit 1
           fi
 
       # 10. DETERMINE APP VERSION & TAG
@@ -255,7 +253,6 @@ jobs:
       - name: Build Release APK
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           VERSION_NAME: ${{ steps.version.outputs.VERSION_NAME }}
@@ -267,14 +264,12 @@ jobs:
             exit 1
           fi
 
-          STORE_PASS="${STORE_PASSWORD:-${KEYSTORE_PASSWORD:-}}"
-          if [ -z "$STORE_PASS" ]; then
-            echo "::error::KEYSTORE_PASSWORD or STORE_PASSWORD is missing!"
+          if [ -z "${KEYSTORE_PASSWORD:-}" ]; then
+            echo "::error::KEYSTORE_PASSWORD is missing!"
             exit 1
           fi
 
-          KEY_PASS="${KEY_PASSWORD:-$STORE_PASS}"
-          if [ -z "$KEY_PASS" ]; then
+          if [ -z "${KEY_PASSWORD:-}" ]; then
             echo "::error::KEY_PASSWORD is missing!"
             exit 1
           fi
@@ -292,9 +287,9 @@ jobs:
           ./gradlew assembleRelease \
             -PVERSION_NAME="${VERSION_NAME}" \
             -Pandroid.injected.signing.store.file="$KEYSTORE_PATH" \
-            -Pandroid.injected.signing.store.password="$STORE_PASS" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
             -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
-            -Pandroid.injected.signing.key.password="$KEY_PASS"
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
 
       # 12. LOCATE, VERIFY, AND PROCESS APK
       - name: Verify and Process APK
