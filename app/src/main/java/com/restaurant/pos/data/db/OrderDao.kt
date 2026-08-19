@@ -42,6 +42,9 @@ interface OrderDao {
     @Query("SELECT * FROM orders WHERE orderNumber = :orderNumber LIMIT 1")
     suspend fun getOrderByNumber(orderNumber: String): OrderWithItems?
 
+    @Query("SELECT orderNumber FROM orders WHERE timestamp >= :startOfDay AND timestamp <= :endOfDay")
+    suspend fun getOrderNumbersInRange(startOfDay: Long, endOfDay: Long): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrder(order: OrderEntity): Long
 

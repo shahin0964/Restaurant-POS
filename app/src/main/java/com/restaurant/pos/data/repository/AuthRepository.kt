@@ -33,6 +33,60 @@ class AuthRepository(
         // No fake / mock accounts are created.
     }
 
+    suspend fun restoreSessionIfNeeded(): UserEntity? {
+        val fbUser = try {
+            firebaseAuth.currentUser
+        } catch (e: Exception) {
+            null
+        } ?: return null
+
+        // Check if there is already a local user matching this Firebase UID or Email
+        var localUser = userDao.getUserByFirebaseUid(fbUser.uid)
+            ?: (if (!fbUser.email.isNullOrBlank()) userDao.getUserByEmailOrPhone(fbUser.email!!) else null)
+
+        if (localUser != null) {
+            if (!localUser.isCurrentSession) {
+                userDao.clearCurrentSessions()
+                userDao.setCurrentSession(localUser.id)
+            }
+            return localUser.copy(isCurrentSession = true)
+        }
+
+        // If local user is missing but Firebase session is valid, fetch profile from Firestore
+        return try {
+            val firestoreUserDoc = firestore.collection("users").document(fbUser.uid).get().await()
+            val remoteRole = firestoreUserDoc?.getString("role") ?: "Administrator"
+            val remoteName = firestoreUserDoc?.getString("name") ?: (fbUser.displayName ?: "User")
+            val remotePermissions = when (val p = firestoreUserDoc?.get("permissions")) {
+                is String -> p
+                is List<*> -> p.filterIsInstance<String>().joinToString(",")
+                else -> null
+            }
+            val defaultPerms = if (remoteRole.equals("Administrator", true) || remoteRole.equals("Admin", true)) {
+                com.restaurant.pos.data.model.AppPermission.allKeys().joinToString(",")
+            } else {
+                com.restaurant.pos.data.model.UserRole.fromRoleName(remoteRole).defaultPermissions.joinToString(",")
+            }
+            val newUser = UserEntity(
+                emailOrPhone = fbUser.email ?: "",
+                name = remoteName,
+                role = remoteRole,
+                passwordHash = "",
+                firebaseUid = fbUser.uid,
+                isCurrentSession = true,
+                isActive = true,
+                permissions = remotePermissions ?: defaultPerms
+            )
+            val newId = userDao.insertUser(newUser)
+            userDao.clearCurrentSessions()
+            userDao.setCurrentSession(newId)
+            newUser.copy(id = newId)
+        } catch (e: Exception) {
+            Log.e("AuthRepository", "Failed to restore user from Firestore on startup: ${e.message}")
+            null
+        }
+    }
+
     /**
      * Checks if an Administrator already exists in either the remote Firestore
      * or the local database to enforce the Single Administrator constraint.

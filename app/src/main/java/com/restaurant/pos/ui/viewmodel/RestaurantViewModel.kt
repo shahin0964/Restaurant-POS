@@ -178,15 +178,19 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
     // Auth State
     val currentUser: StateFlow<UserEntity?> = authRepo.currentUser.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
+        started = SharingStarted.Eagerly,
         initialValue = null
     )
 
     val allUsers: StateFlow<List<UserEntity>> = authRepo.allUsers.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
+        started = SharingStarted.Eagerly,
         initialValue = emptyList()
     )
+
+    suspend fun restoreSessionIfNeeded(): UserEntity? {
+        return authRepo.restoreSessionIfNeeded()
+    }
 
     fun saveStaffUser(
         id: Long = 0,
@@ -611,6 +615,7 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
 
     init {
         viewModelScope.launch {
+            authRepo.restoreSessionIfNeeded()
             authRepo.seedDefaultUserIfNeeded()
             val hasClearedLegacy = sharedPrefs.getBoolean("has_removed_existing_products_and_categories_v1", false)
             if (!hasClearedLegacy) {
@@ -700,9 +705,6 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
                 tableId = selectedTId
             )
             val orderWithItems = restaurantRepo.getOrderById(orderId)
-            if (orderWithItems != null && (printerSetting.value?.autoPrintOnOrder == true)) {
-                printerRepo.printOrderReceipt(orderWithItems)
-            }
             clearCart()
             _selectedOrderForDetails.value = orderWithItems
             forceCloudSync()

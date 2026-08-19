@@ -563,7 +563,13 @@ class CloudSyncManager(
             "menu_items" -> db.menuItemDao().updateMenuItem(mapToMenuItemEntity(mappedData))
             "orders" -> db.orderDao().insertOrder(mapToOrderEntity(mappedData))
             "order_items" -> db.orderDao().insertOrderItems(listOf(mapToOrderItemEntity(mappedData)))
-            "users" -> db.userDao().updateUser(mapToUserEntity(mappedData))
+            "users" -> {
+                val currentFbUid = try { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid } catch (e: Exception) { null }
+                val existingLocal = db.userDao().getUserById(localId)
+                val userToSave = mapToUserEntity(mappedData)
+                val shouldBeCurrentSession = existingLocal?.isCurrentSession == true || (currentFbUid != null && userToSave.firebaseUid == currentFbUid)
+                db.userDao().updateUser(userToSave.copy(isCurrentSession = shouldBeCurrentSession))
+            }
             "expenses" -> db.expenseDao().insertExpense(mapToExpenseEntity(mappedData))
             "stock_logs" -> db.stockLogDao().insertLog(mapToStockLogEntity(mappedData))
             "offers" -> db.offerDao().updateOffer(mapToOfferEntity(mappedData))
@@ -588,7 +594,12 @@ class CloudSyncManager(
                 db.orderDao().insertOrderItems(listOf(mapToOrderItemEntity(mappedData)))
                 0L
             }
-            "users" -> db.userDao().insertUser(mapToUserEntity(mappedData))
+            "users" -> {
+                val currentFbUid = try { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid } catch (e: Exception) { null }
+                val userToSave = mapToUserEntity(mappedData)
+                val shouldBeCurrentSession = (currentFbUid != null && userToSave.firebaseUid == currentFbUid)
+                db.userDao().insertUser(userToSave.copy(isCurrentSession = shouldBeCurrentSession))
+            }
             "expenses" -> db.expenseDao().insertExpense(mapToExpenseEntity(mappedData))
             "stock_logs" -> db.stockLogDao().insertLog(mapToStockLogEntity(mappedData))
             "offers" -> db.offerDao().insertOffer(mapToOfferEntity(mappedData))

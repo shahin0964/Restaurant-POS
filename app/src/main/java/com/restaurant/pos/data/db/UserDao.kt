@@ -22,6 +22,9 @@ interface UserDao {
     @Query("SELECT * FROM users WHERE isCurrentSession = 1 LIMIT 1")
     fun getCurrentSessionUser(): Flow<UserEntity?>
 
+    @Query("SELECT * FROM users WHERE isCurrentSession = 1 LIMIT 1")
+    suspend fun getCurrentSessionUserSync(): UserEntity?
+
     @Query("SELECT * FROM users ORDER BY id ASC")
     fun getAllUsers(): Flow<List<UserEntity>>
 

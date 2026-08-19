@@ -206,9 +206,33 @@ class RestaurantRepository(
         cartItems: List<CartItem>,
         tableId: Long? = null
     ): Long {
-        val count = allOrders.first().size
-        val nextNum = 1056 + count
-        val orderNum = "#$nextNum"
+        val currentTime = System.currentTimeMillis()
+        val calendar = java.util.Calendar.getInstance().apply {
+            timeInMillis = currentTime
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val startOfDay = calendar.timeInMillis
+        val endOfDay = startOfDay + (24 * 60 * 60 * 1000L) - 1L
+
+        val todayOrders = orderDao.getOrderNumbersInRange(startOfDay, endOfDay)
+        val maxTodaySeq = todayOrders.mapNotNull { num ->
+            val clean = num.trim()
+            if (clean.startsWith("ORD-", ignoreCase = true)) {
+                clean.substringAfter("ORD-").toIntOrNull()
+            } else if (clean.startsWith("ORD", ignoreCase = true)) {
+                clean.substringAfter("ORD").toIntOrNull()
+            } else if (clean.startsWith("#")) {
+                clean.substringAfter("#").toIntOrNull()?.let { if (it < 1000) it else null }
+            } else {
+                clean.toIntOrNull()
+            }
+        }.maxOrNull() ?: 0
+
+        val nextSeq = maxTodaySeq + 1
+        val orderNum = String.format(Locale.US, "ORD-%03d", nextSeq)
 
         val order = OrderEntity(
             orderNumber = orderNum,
@@ -223,7 +247,7 @@ class RestaurantRepository(
             paymentMethod = paymentMethod,
             isPaid = false,
             status = "Pending",
-            timestamp = System.currentTimeMillis(),
+            timestamp = currentTime,
             tableId = tableId
         )
 

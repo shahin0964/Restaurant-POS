@@ -58,15 +58,17 @@ fun SplashScreen(
         }
     }
 
-    // Exact 1500 ms (1.5 seconds) splash screen duration
+    // Exact 1500 ms (1.5 seconds) splash screen duration with session restoration
     LaunchedEffect(Unit) {
+        val restoredUser = viewModel.restoreSessionIfNeeded()
         delay(1500)
         val hasFirebaseUser = try {
             com.google.firebase.auth.FirebaseAuth.getInstance().currentUser != null
         } catch (e: Exception) {
             false
         }
-        val isLoggedIn = currentUser != null && hasFirebaseUser
+        val currentSessionUser = restoredUser ?: viewModel.currentUser.value ?: currentUser
+        val isLoggedIn = currentSessionUser != null && hasFirebaseUser
         onNavigateNext(isLoggedIn)
     }
 
