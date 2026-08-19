@@ -492,7 +492,14 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
         initialValue = PrinterSettingEntity()
     )
 
-    val allTables: StateFlow<List<TableEntity>> = restaurantRepo.allTables.stateIn(
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val allTables: StateFlow<List<TableEntity>> = currentUser.flatMapLatest { user ->
+        if (user != null) {
+            restaurantRepo.getAllTables(user.id.toString())
+        } else {
+            kotlinx.coroutines.flow.flowOf(emptyList())
+        }
+    }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
@@ -510,7 +517,7 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
         return ordersList.firstOrNull { orderWithItems ->
             val o = orderWithItems.order
             val isDineIn = o.orderType.lowercase().contains("dine")
-            val isActive = o.status != "Completed" && o.status != "Cancelled"
+            val isActive = !o.status.equals("Completed", ignoreCase = true) && !o.status.equals("Cancelled", ignoreCase = true)
             if (!isDineIn || !isActive) return@firstOrNull false
 
             val orderTableClean = o.tableNumber.trim().lowercase()
@@ -532,7 +539,8 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
         }
         viewModelScope.launch {
             try {
-                restaurantRepo.addTable(name.trim(), capacity)
+                val accountId = currentUser.value?.id?.toString() ?: ""
+                restaurantRepo.addTable(name.trim(), capacity, accountId)
                 forceCloudSync()
                 onSuccess()
             } catch (e: Exception) {
@@ -656,6 +664,12 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
             if (!hasClearedLegacy) {
                 restaurantRepo.clearExistingProductsAndCategories()
                 sharedPrefs.edit().putBoolean("has_removed_existing_products_and_categories_v1", true).apply()
+            }
+            val hasRemovedSampleTables = sharedPrefs.getBoolean("has_removed_sample_tables_v1", false)
+            if (!hasRemovedSampleTables) {
+                val accountId = currentUser.value?.id?.toString() ?: ""
+                restaurantRepo.removeSampleTables(accountId)
+                sharedPrefs.edit().putBoolean("has_removed_sample_tables_v1", true).apply()
             }
             checkForGitHubUpdates()
         }

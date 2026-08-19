@@ -17,7 +17,9 @@ class RestaurantRepository(
     val categories: Flow<List<CategoryEntity>> = categoryDao.getAllCategories()
     val menuItems: Flow<List<MenuItemEntity>> = menuItemDao.getAllMenuItems()
     val allOrders: Flow<List<OrderWithItems>> = orderDao.getAllOrdersWithItems()
-    val allTables: Flow<List<TableEntity>> = tableDao?.getAllTables() ?: kotlinx.coroutines.flow.flowOf(emptyList())
+    
+    fun getAllTables(accountId: String): Flow<List<TableEntity>> = tableDao?.getAllTables(accountId) ?: kotlinx.coroutines.flow.flowOf(emptyList())
+    
     val allExpenses: Flow<List<ExpenseEntity>> = expenseDao.getAllExpenses()
     val allStockLogs: Flow<List<StockLogEntity>> = stockLogDao?.getAllStockLogs() ?: kotlinx.coroutines.flow.flowOf(emptyList())
     val pendingOrders: Flow<List<OrderWithItems>> = orderDao.getOrdersByStatus("Pending")
@@ -26,8 +28,18 @@ class RestaurantRepository(
     val totalOrdersCount: Flow<Int> = orderDao.getOrderCount()
     val totalSalesAmount: Flow<Double?> = orderDao.getTotalSales()
 
-    suspend fun addTable(name: String, capacity: Int = 4): Long {
-        val table = TableEntity(name = name, capacity = capacity)
+    suspend fun removeSampleTables(accountId: String) {
+        val allTables = tableDao?.getAllTablesSync(accountId) ?: return
+        val sampleNames = listOf("Table 1", "Table 2", "Table 3", "Table 4", "Table 5", "Table 6")
+        allTables.forEach { table ->
+            if (sampleNames.contains(table.name)) {
+                tableDao.deleteTable(table.id)
+            }
+        }
+    }
+
+    suspend fun addTable(name: String, capacity: Int = 4, accountId: String): Long {
+        val table = TableEntity(name = name, capacity = capacity, accountId = accountId)
         return tableDao?.insertTable(table) ?: 0L
     }
 

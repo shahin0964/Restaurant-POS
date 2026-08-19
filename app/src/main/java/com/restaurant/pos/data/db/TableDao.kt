@@ -7,11 +7,14 @@ import kotlinx.coroutines.flow.Flow
 interface TableDao {
     @Query("SELECT * FROM tables WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): TableEntity?
-    @Query("SELECT * FROM tables WHERE isActive = 1 ORDER BY id ASC")
-    fun getAllTables(): Flow<List<TableEntity>>
+    @Query("SELECT * FROM tables WHERE isActive = 1 AND accountId = :accountId ORDER BY id ASC")
+    fun getAllTables(accountId: String): Flow<List<TableEntity>>
 
     @Query("SELECT * FROM tables")
     suspend fun getAllTablesSync(): List<TableEntity>
+
+    @Query("SELECT * FROM tables WHERE accountId = :accountId")
+    suspend fun getAllTablesSync(accountId: String): List<TableEntity>
 
     @Query("SELECT * FROM tables WHERE id = :id LIMIT 1")
     suspend fun getTableById(id: Long): TableEntity?

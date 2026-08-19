@@ -9,5 +9,6 @@ data class TableEntity(
     val id: Long = 0,
     val name: String,
     val capacity: Int = 4,
-    val isActive: Boolean = true
+    val isActive: Boolean = true,
+    val accountId: String = ""
 )
