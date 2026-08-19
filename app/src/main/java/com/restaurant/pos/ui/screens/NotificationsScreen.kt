@@ -18,10 +18,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.restaurant.pos.R
 import com.restaurant.pos.data.db.NotificationEntity
 import com.restaurant.pos.ui.components.BottomNavBar
 import com.restaurant.pos.ui.theme.*
@@ -74,8 +76,8 @@ fun NotificationsScreen(
                             )
                         }
                         Text(
-                            text = "Notifications",
-                        color = TextPrimary,
+                            text = stringResource(R.string.title_notifications),
+                            color = TextPrimary,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -86,8 +88,8 @@ fun NotificationsScreen(
                                 shape = RoundedCornerShape(12.dp)
                             ) {
                                 Text(
-                                    text = "$unreadCount unread",
-                        color = TextPrimary,
+                                    text = stringResource(R.string.lbl_unread_formatted, unreadCount),
+                                    color = TextPrimary,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
@@ -102,7 +104,7 @@ fun NotificationsScreen(
                             modifier = Modifier.testTag("notifications_mark_all_read_btn")
                         ) {
                             Text(
-                                text = "Mark All Read",
+                                text = stringResource(R.string.btn_mark_all_read),
                                 color = CurrencyGold,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
@@ -123,7 +125,7 @@ fun NotificationsScreen(
                         onClick = { selectedTab = 0 },
                         text = {
                             Text(
-                                "History (${allNotifications.size})",
+                                stringResource(R.string.tab_history_formatted, allNotifications.size),
                                 color = if (selectedTab == 0) CurrencyGold else TextSecondary,
                                 fontWeight = FontWeight.Bold
                             )
@@ -134,7 +136,7 @@ fun NotificationsScreen(
                         onClick = { selectedTab = 1 },
                         text = {
                             Text(
-                                "Settings",
+                                stringResource(R.string.tab_settings),
                                 color = if (selectedTab == 1) CurrencyGold else TextSecondary,
                                 fontWeight = FontWeight.Bold
                             )
@@ -168,7 +170,7 @@ fun NotificationsScreen(
                         FilterChip(
                             selected = !filterUnreadOnly,
                             onClick = { filterUnreadOnly = false },
-                            label = { Text("All (${allNotifications.size})", fontSize = 12.sp) },
+                            label = { Text(stringResource(R.string.filter_all_count, allNotifications.size), fontSize = 12.sp) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = CurrencyGold,
                                 selectedLabelColor = Color.Black,
@@ -179,7 +181,7 @@ fun NotificationsScreen(
                         FilterChip(
                             selected = filterUnreadOnly,
                             onClick = { filterUnreadOnly = true },
-                            label = { Text("Unread ($unreadCount)", fontSize = 12.sp) },
+                            label = { Text(stringResource(R.string.filter_unread_count, unreadCount), fontSize = 12.sp) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = CurrencyGold,
                                 selectedLabelColor = Color.Black,
@@ -221,13 +223,13 @@ fun NotificationsScreen(
                                 modifier = Modifier.size(56.dp)
                             )
                             Text(
-                                text = if (filterUnreadOnly) "No unread notifications" else "No notifications yet",
+                                text = if (filterUnreadOnly) stringResource(R.string.msg_no_unread_notifications) else stringResource(R.string.msg_no_notifications),
                                 color = TextPrimary,
-                        fontSize = 16.sp,
+                                fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Real events (new orders, stock alerts, payment, order ready) will appear here.",
+                                text = stringResource(R.string.msg_notifications_desc),
                                 color = TextSecondary,
                                 fontSize = 13.sp,
                                 modifier = Modifier.padding(horizontal = 32.dp),
@@ -350,7 +352,7 @@ fun NotificationCardItem(
                         shape = RoundedCornerShape(4.dp)
                     ) {
                         Text(
-                            text = "UNREAD",
+                            text = stringResource(R.string.lbl_unread_tag),
                             color = CurrencyGold,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
@@ -390,14 +392,14 @@ fun NotificationSettingsTab(viewModel: RestaurantViewModel) {
     ) {
         item {
             Text(
-                text = "Event Notification Preferences",
-                        color = TextPrimary,
+                text = stringResource(R.string.title_notification_preferences),
+                color = TextPrimary,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 4.dp)
             )
             Text(
-                text = "Toggle active alert notifications generated from real system events.",
+                text = stringResource(R.string.desc_notification_preferences),
                 color = TextSecondary,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(bottom = 12.dp)
@@ -406,8 +408,8 @@ fun NotificationSettingsTab(viewModel: RestaurantViewModel) {
 
         item {
             NotificationToggleCard(
-                title = "New Order Alerts",
-                subtitle = "Trigger notification when a real new order is created",
+                title = stringResource(R.string.notif_title_new_order),
+                subtitle = stringResource(R.string.notif_desc_new_order),
                 icon = "🛍️",
                 checked = notifyNewOrder,
                 onCheckedChange = {
@@ -419,8 +421,8 @@ fun NotificationSettingsTab(viewModel: RestaurantViewModel) {
 
         item {
             NotificationToggleCard(
-                title = "Low Stock Alerts",
-                subtitle = "Trigger notification when item reaches low stock threshold",
+                title = stringResource(R.string.notif_title_low_stock),
+                subtitle = stringResource(R.string.notif_desc_low_stock),
                 icon = "⚠️",
                 checked = notifyLowStock,
                 onCheckedChange = {
@@ -432,8 +434,8 @@ fun NotificationSettingsTab(viewModel: RestaurantViewModel) {
 
         item {
             NotificationToggleCard(
-                title = "Out of Stock Alerts",
-                subtitle = "Trigger notification when item stock reaches zero",
+                title = stringResource(R.string.notif_title_out_stock),
+                subtitle = stringResource(R.string.notif_desc_out_stock),
                 icon = "🚫",
                 checked = notifyOutOfStock,
                 onCheckedChange = {
@@ -445,8 +447,8 @@ fun NotificationSettingsTab(viewModel: RestaurantViewModel) {
 
         item {
             NotificationToggleCard(
-                title = "Payment Confirmed Alerts",
-                subtitle = "Trigger notification when payment is confirmed for an order",
+                title = stringResource(R.string.notif_title_payment),
+                subtitle = stringResource(R.string.notif_desc_payment),
                 icon = "💳",
                 checked = notifyPayment,
                 onCheckedChange = {
@@ -458,8 +460,8 @@ fun NotificationSettingsTab(viewModel: RestaurantViewModel) {
 
         item {
             NotificationToggleCard(
-                title = "Order Ready Alerts",
-                subtitle = "Trigger notification when order status changes to Ready",
+                title = stringResource(R.string.notif_title_order_ready),
+                subtitle = stringResource(R.string.notif_desc_order_ready),
                 icon = "🍽️",
                 checked = notifyOrderReady,
                 onCheckedChange = {

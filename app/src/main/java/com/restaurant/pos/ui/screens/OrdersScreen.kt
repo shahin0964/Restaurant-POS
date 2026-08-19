@@ -18,9 +18,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.restaurant.pos.R
 import com.restaurant.pos.data.db.OrderWithItems
 import com.restaurant.pos.ui.components.BottomNavBar
 import com.restaurant.pos.ui.theme.*
@@ -81,7 +83,7 @@ fun OrdersScreen(
                         )
                     }
                     Text(
-                        text = "Orders List",
+                        text = stringResource(R.string.title_orders_list),
                         color = TextPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -116,20 +118,24 @@ fun OrdersScreen(
                     .border(1.dp, BorderOutline, RoundedCornerShape(10.dp))
                     .padding(4.dp)
             ) {
-                val filters = listOf("All", "Pending", "Paid")
-                filters.forEach { filter ->
-                    val isSel = selectedFilter == filter
+                val filters = listOf(
+                    "All" to R.string.filter_all,
+                    "Pending" to R.string.status_pending,
+                    "Paid" to R.string.status_paid
+                )
+                filters.forEach { (filterKey, labelRes) ->
+                    val isSel = selectedFilter == filterKey
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(8.dp))
                             .background(if (isSel) BrandPrimary else Color.Transparent)
-                            .clickable { selectedFilter = filter }
+                            .clickable { selectedFilter = filterKey }
                             .padding(vertical = 10.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = filter,
+                            text = stringResource(labelRes),
                             color = if (isSel) Color.White else TextSecondary,
                             fontSize = 12.sp,
                             fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
@@ -145,7 +151,7 @@ fun OrdersScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("No orders found", color = TextMuted, fontSize = 14.sp)
+                    Text(stringResource(R.string.msg_no_orders_found), color = TextMuted, fontSize = 14.sp)
                 }
             } else {
                 LazyColumn(
@@ -213,7 +219,7 @@ fun OrderRowCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "${order.orderType}${if (order.tableNumber.isNotBlank()) " • Table ${order.tableNumber}" else ""}",
+                        text = "${order.orderType}${if (order.tableNumber.isNotBlank()) " • " + stringResource(R.string.lbl_table_number, order.tableNumber) else ""}",
                         color = TextSecondary,
                         fontSize = 12.sp,
                         maxLines = 1,
@@ -238,7 +244,7 @@ fun OrderRowCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (order.customerName.isNotBlank()) "Customer: ${order.customerName}" else "Walk-in Customer",
+                    text = if (order.customerName.isNotBlank()) stringResource(R.string.lbl_customer_name, order.customerName) else stringResource(R.string.lbl_walkin_customer),
                     color = TextSecondary,
                     fontSize = 12.sp,
                     maxLines = 1,
@@ -247,7 +253,7 @@ fun OrderRowCard(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "${items.size} Items",
+                    text = stringResource(R.string.lbl_items_count, items.size),
                     color = TextMuted,
                     fontSize = 11.sp,
                     maxLines = 1
@@ -263,9 +269,9 @@ fun OrderRowCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text("Total Amount", color = TextMuted, fontSize = 10.sp)
+                    Text(stringResource(R.string.lbl_total_amount), color = TextMuted, fontSize = 10.sp)
                     Text(
-                        text = "৳ ${String.format(Locale.US, "%.0f", order.total)}",
+                        text = "৳ ${String.format(Locale.getDefault(), "%.0f", order.total)}",
                         color = CurrencyGold,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold
@@ -287,8 +293,15 @@ fun OrderRowCard(
                             )
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
+                        val statusLabel = when {
+                            isPaid -> stringResource(R.string.status_paid)
+                            order.status == "Pending" -> stringResource(R.string.status_pending)
+                            order.status == "Preparing" -> stringResource(R.string.status_preparing)
+                            order.status == "Ready" -> stringResource(R.string.status_ready)
+                            else -> order.status
+                        }
                         Text(
-                            text = if (isPaid) "Paid" else order.status,
+                            text = statusLabel,
                             color = when {
                                 isPaid -> StatusReady
                                 order.status == "Pending" -> StatusPending

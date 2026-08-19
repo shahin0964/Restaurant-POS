@@ -20,9 +20,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.restaurant.pos.R
 import com.restaurant.pos.data.db.OrderWithItems
 import com.restaurant.pos.ui.components.BottomNavBar
 import com.restaurant.pos.ui.theme.*
@@ -126,8 +128,8 @@ fun OrderHistoryScreen(
                             )
                         }
                         Text(
-                            text = "Order History",
-                        color = TextPrimary,
+                            text = stringResource(R.string.title_order_history),
+                            color = TextPrimary,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -199,8 +201,8 @@ fun OrderHistoryScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Date: ${dateFormat.format(Date(selectedDateInMillis!!))}",
-                        color = TextPrimary,
+                                text = stringResource(R.string.lbl_date_formatted, dateFormat.format(Date(selectedDateInMillis!!))),
+                                color = TextPrimary,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -218,7 +220,7 @@ fun OrderHistoryScreen(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "SHOW ALL",
+                                text = stringResource(R.string.btn_show_all),
                                 color = StatusCancelled,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
@@ -236,7 +238,7 @@ fun OrderHistoryScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (selectedDateInMillis != null) "No orders found for this date." else "No historical orders found.",
+                        text = if (selectedDateInMillis != null) stringResource(R.string.msg_no_orders_date) else stringResource(R.string.msg_no_historical_orders),
                         color = TextMuted,
                         fontSize = 14.sp
                     )
@@ -281,7 +283,7 @@ fun OrderHistoryScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "(${ordersInGroup.size} ${if (ordersInGroup.size == 1) "order" else "orders"})",
+                                    text = stringResource(R.string.lbl_orders_count, ordersInGroup.size),
                                     color = TextMuted,
                                     fontSize = 11.sp
                                 )

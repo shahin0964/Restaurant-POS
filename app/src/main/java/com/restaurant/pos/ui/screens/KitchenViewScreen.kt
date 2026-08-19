@@ -20,9 +20,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.restaurant.pos.R
 import com.restaurant.pos.data.db.OrderWithItems
 import com.restaurant.pos.ui.components.BottomNavBar
 import com.restaurant.pos.ui.theme.*
@@ -58,7 +60,7 @@ fun KitchenViewScreen(
             onDismissRequest = { orderToConfirmPayment = null },
             title = {
                 Text(
-                    text = "Confirm Payment",
+                    text = stringResource(R.string.title_confirm_payment),
                     color = TextPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp
@@ -66,7 +68,7 @@ fun KitchenViewScreen(
             },
             text = {
                 Text(
-                    text = "Are you sure order ${order.orderNumber} (Total: ৳${String.format(Locale.US, "%.0f", order.total)}) has been paid?",
+                    text = stringResource(R.string.msg_confirm_payment, order.orderNumber, String.format(Locale.getDefault(), "%.0f", order.total)),
                     color = TextSecondary,
                     fontSize = 14.sp
                 )
@@ -91,14 +93,14 @@ fun KitchenViewScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary, contentColor = Color.White),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("CONFIRM", fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.btn_confirm), fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(
                     onClick = { orderToConfirmPayment = null }
                 ) {
-                    Text("CANCEL", color = TextMuted)
+                    Text(stringResource(R.string.btn_cancel), color = TextMuted)
                 }
             },
             containerColor = DarkSurface,
@@ -130,7 +132,7 @@ fun KitchenViewScreen(
                         )
                     }
                     Text(
-                        text = "Orders & Kitchen View",
+                        text = stringResource(R.string.title_kitchen_view),
                         color = TextPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -161,7 +163,7 @@ fun KitchenViewScreen(
                                 .height(46.dp)
                                 .testTag("mark_all_ready_btn")
                         ) {
-                            Text("MARK ALL AS READY", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(stringResource(R.string.btn_mark_all_ready), fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     }
                 }
@@ -193,23 +195,23 @@ fun KitchenViewScreen(
                     .padding(4.dp)
             ) {
                 val tabs = listOf(
-                    "Pending" to pendingList.size,
-                    "Preparing" to preparingList.size,
-                    "Ready" to readyList.size
+                    Triple("Pending", R.string.status_pending, pendingList.size),
+                    Triple("Preparing", R.string.status_preparing, preparingList.size),
+                    Triple("Ready", R.string.status_ready, readyList.size)
                 )
-                tabs.forEach { (tabName, count) ->
-                    val isSel = selectedTab == tabName
+                tabs.forEach { (tabKey, labelRes, count) ->
+                    val isSel = selectedTab == tabKey
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(8.dp))
                             .background(if (isSel) BrandPrimary else Color.Transparent)
-                            .clickable { selectedTab = tabName }
+                            .clickable { selectedTab = tabKey }
                             .padding(vertical = 10.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "$tabName ($count)",
+                            text = "${stringResource(labelRes)} ($count)",
                             color = if (isSel) Color.White else TextSecondary,
                             fontSize = 11.sp,
                             fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
@@ -222,11 +224,16 @@ fun KitchenViewScreen(
 
             // Order Tickets List
             if (currentOrders.isEmpty()) {
+                val currentTabLabel = when (selectedTab) {
+                    "Pending" -> stringResource(R.string.status_pending)
+                    "Preparing" -> stringResource(R.string.status_preparing)
+                    else -> stringResource(R.string.status_ready)
+                }
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("No $selectedTab orders", color = TextMuted, fontSize = 14.sp)
+                    Text(stringResource(R.string.msg_no_orders_status, currentTabLabel), color = TextMuted, fontSize = 14.sp)
                 }
             } else {
                 LazyColumn(
@@ -346,9 +353,9 @@ fun KitchenTicketCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text("Total Amount", color = TextMuted, fontSize = 10.sp)
+                    Text(stringResource(R.string.lbl_total_amount), color = TextMuted, fontSize = 10.sp)
                     Text(
-                        text = "৳ ${String.format(Locale.US, "%.0f", order.total)}",
+                        text = "৳ ${String.format(Locale.getDefault(), "%.0f", order.total)}",
                         color = CurrencyGold,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
@@ -364,7 +371,7 @@ fun KitchenTicketCard(
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.height(30.dp)
                         ) {
-                            Text("START PREPARING", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.btn_start_preparing), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                     "Preparing" -> {
@@ -375,7 +382,7 @@ fun KitchenTicketCard(
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.height(30.dp)
                         ) {
-                            Text("MARK AS READY", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.btn_mark_as_ready), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                     "Ready" -> {
@@ -386,7 +393,7 @@ fun KitchenTicketCard(
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                             modifier = Modifier.height(30.dp)
                         ) {
-                            Text("PAID", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.btn_paid), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                     else -> {
@@ -396,7 +403,7 @@ fun KitchenTicketCard(
                                 .background(StatusReady.copy(alpha = 0.2f))
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
-                            Text("PAID", color = StatusReady, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.btn_paid), color = StatusReady, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

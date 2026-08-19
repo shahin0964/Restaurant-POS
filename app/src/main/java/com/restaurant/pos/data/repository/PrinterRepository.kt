@@ -166,7 +166,7 @@ class PrinterRepository(
                         val g = (pixel shr 8) and 0xFF
                         val b = pixel and 0xFF
                         val luminance = (r * 0.299 + g * 0.587 + b * 0.114).toInt()
-                        if (luminance < 128) {
+                        if (luminance < 180) {
                             currentByte = currentByte or (0x80 shr bit)
                         }
                     }
@@ -198,21 +198,21 @@ class PrinterRepository(
         val normalPaint = TextPaint().apply {
             color = Color.BLACK
             textSize = 22f
-            isAntiAlias = false
+            isAntiAlias = true
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
         }
 
         val boldPaint = TextPaint().apply {
             color = Color.BLACK
             textSize = 22f
-            isAntiAlias = false
+            isAntiAlias = true
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
 
         val headerPaint = TextPaint().apply {
             color = Color.BLACK
             textSize = 28f
-            isAntiAlias = false
+            isAntiAlias = true
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
 
@@ -239,10 +239,24 @@ class PrinterRepository(
 
         fun drawLeftRight(left: String, right: String, isBold: Boolean = false) {
             val p = if (isBold) boldPaint else normalPaint
-            canvas.drawText(left, 0f, y + p.textSize, p)
             val rightWidth = p.measureText(right)
-            canvas.drawText(right, targetWidth - rightWidth, y + p.textSize, p)
-            y += p.textSize + 8f
+            val maxLeftWidth = (targetWidth - rightWidth - 8f).coerceAtLeast(40f)
+
+            val leftLayout = StaticLayout.Builder.obtain(left, 0, left.length, p, maxLeftWidth.toInt())
+                .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                .setLineSpacing(0f, 1.1f)
+                .setIncludePad(false)
+                .build()
+
+            canvas.save()
+            canvas.translate(0f, y)
+            leftLayout.draw(canvas)
+            canvas.restore()
+
+            val baseline = y + leftLayout.getLineBaseline(0)
+            canvas.drawText(right, targetWidth - rightWidth, baseline, p)
+
+            y += maxOf(leftLayout.height.toFloat(), p.textSize) + 8f
         }
 
         val shopName = if (receiptSetting.showShopName && receiptSetting.shopName.isNotBlank()) receiptSetting.shopName else "RESTAURANT POS"
@@ -272,7 +286,7 @@ class PrinterRepository(
         }
 
         y += 20f
-        val finalHeight = y.toInt()
+        val finalHeight = y.toInt().coerceAtLeast(10)
         val finalBitmap = Bitmap.createBitmap(tempBitmap, 0, 0, targetWidth, finalHeight)
         return bitmapToEscPosBytes(finalBitmap)
     }
@@ -295,21 +309,21 @@ class PrinterRepository(
         val normalPaint = TextPaint().apply {
             color = Color.BLACK
             textSize = 21f
-            isAntiAlias = false
+            isAntiAlias = true
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
         }
 
         val boldPaint = TextPaint().apply {
             color = Color.BLACK
             textSize = 21f
-            isAntiAlias = false
+            isAntiAlias = true
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
 
         val headerPaint = TextPaint().apply {
             color = Color.BLACK
             textSize = 28f
-            isAntiAlias = false
+            isAntiAlias = true
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
 
@@ -336,10 +350,24 @@ class PrinterRepository(
 
         fun drawLeftRight(left: String, right: String, isBold: Boolean = false) {
             val p = if (isBold) boldPaint else normalPaint
-            canvas.drawText(left, 0f, y + p.textSize, p)
             val rightWidth = p.measureText(right)
-            canvas.drawText(right, targetWidth - rightWidth, y + p.textSize, p)
-            y += p.textSize + 8f
+            val maxLeftWidth = (targetWidth - rightWidth - 8f).coerceAtLeast(40f)
+
+            val leftLayout = StaticLayout.Builder.obtain(left, 0, left.length, p, maxLeftWidth.toInt())
+                .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                .setLineSpacing(0f, 1.1f)
+                .setIncludePad(false)
+                .build()
+
+            canvas.save()
+            canvas.translate(0f, y)
+            leftLayout.draw(canvas)
+            canvas.restore()
+
+            val baseline = y + leftLayout.getLineBaseline(0)
+            canvas.drawText(right, targetWidth - rightWidth, baseline, p)
+
+            y += maxOf(leftLayout.height.toFloat(), p.textSize) + 6f
         }
 
         val currSymbol = if (receiptSetting.currencySymbol.isNotBlank()) receiptSetting.currencySymbol else (receiptSetting.currencyCode.ifBlank { "BDT" })
@@ -408,9 +436,6 @@ class PrinterRepository(
 
         // Items Table
         if (receiptSetting.showItems && items.isNotEmpty()) {
-            val itemColWidth = (targetWidth * 0.55f).toInt()
-            val qtyColWidth = (targetWidth * 0.18f).toInt()
-
             drawLeftRight("Item", "Qty   Price", isBold = true)
             drawDivider("-")
 
@@ -418,8 +443,18 @@ class PrinterRepository(
                 val priceVal = item.pricePerUnit * item.quantity
                 val priceStr = formatMoney(priceVal)
                 val qtyStr = "x${item.quantity}"
+                val rightSideText = "$qtyStr  $priceStr"
 
-                val itemLayout = StaticLayout.Builder.obtain(item.menuItemName, 0, item.menuItemName.length, normalPaint, itemColWidth)
+                val rightWidth = normalPaint.measureText(rightSideText)
+                val maxItemWidth = (targetWidth - rightWidth - 8f).coerceAtLeast(80f)
+
+                val itemLayout = StaticLayout.Builder.obtain(
+                    item.menuItemName,
+                    0,
+                    item.menuItemName.length,
+                    normalPaint,
+                    maxItemWidth.toInt()
+                )
                     .setAlignment(Layout.Alignment.ALIGN_NORMAL)
                     .setLineSpacing(0f, 1.1f)
                     .setIncludePad(false)
@@ -430,16 +465,31 @@ class PrinterRepository(
                 itemLayout.draw(canvas)
                 canvas.restore()
 
-                val rightSideText = "$qtyStr  $priceStr"
-                val rightWidth = normalPaint.measureText(rightSideText)
-                canvas.drawText(rightSideText, targetWidth - rightWidth, y + normalPaint.textSize, normalPaint)
+                val baseline = y + itemLayout.getLineBaseline(0)
+                canvas.drawText(rightSideText, targetWidth - rightWidth, baseline, normalPaint)
 
-                y += maxOf(itemLayout.height.toFloat(), normalPaint.textSize) + 8f
+                y += maxOf(itemLayout.height.toFloat(), normalPaint.textSize) + 6f
 
                 if (item.note.isNotBlank()) {
                     val noteText = "  (${item.note})"
-                    canvas.drawText(noteText, 0f, y + normalPaint.textSize, normalPaint)
-                    y += normalPaint.textSize + 6f
+                    val noteLayout = StaticLayout.Builder.obtain(
+                        noteText,
+                        0,
+                        noteText.length,
+                        normalPaint,
+                        (targetWidth - 16f).toInt()
+                    )
+                        .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                        .setLineSpacing(0f, 1.1f)
+                        .setIncludePad(false)
+                        .build()
+
+                    canvas.save()
+                    canvas.translate(0f, y)
+                    noteLayout.draw(canvas)
+                    canvas.restore()
+
+                    y += noteLayout.height.toFloat() + 4f
                 }
             }
             drawDivider("-")
@@ -473,7 +523,7 @@ class PrinterRepository(
         }
 
         y += 24f
-        val finalHeight = y.toInt()
+        val finalHeight = y.toInt().coerceAtLeast(10)
         val finalBitmap = Bitmap.createBitmap(tempBitmap, 0, 0, targetWidth, finalHeight)
         return bitmapToEscPosBytes(finalBitmap)
     }

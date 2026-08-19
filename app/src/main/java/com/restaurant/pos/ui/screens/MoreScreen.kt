@@ -909,13 +909,13 @@ fun MoreScreen(
                         Spacer(modifier = Modifier.width(16.dp))
                         Column {
                             Text(
-                                text = if (currentLang == "bn") "ভাষা / LANGUAGE" else "LANGUAGE / ভাষা",
+                                text = stringResource(R.string.more_language),
                                 color = TextPrimary,
-                        fontSize = 15.sp,
+                                fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = if (currentLang == "bn") "অ্যাপের ভাষা পরিবর্তন করুন (বাংলা / English)" else "Change application language (English / বাংলা)",
+                                text = stringResource(R.string.more_language_desc),
                                 color = TextSecondary,
                                 fontSize = 12.sp
                             )
@@ -976,14 +976,14 @@ fun MoreScreen(
                         Spacer(modifier = Modifier.width(16.dp))
                         Column {
                             Text(
-                                text = if (currentLang == "bn") "থিম / THEME" else "THEME / থিম",
+                                text = stringResource(R.string.more_theme),
                                 color = TextPrimary,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.testTag("more_item_theme_text")
                             )
                             Text(
-                                text = if (currentLang == "bn") "অ্যাপের থিম পরিবর্তন করুন (সিস্টেম / লাইট / ডার্ক)" else "Change application theme (System / Light / Dark)",
+                                text = stringResource(R.string.more_theme_desc),
                                 color = TextSecondary,
                                 fontSize = 12.sp
                             )
@@ -994,9 +994,9 @@ fun MoreScreen(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         val currentThemeText = when (currentTheme) {
-                            "dark" -> if (currentLang == "bn") "🌙 ডার্ক" else "🌙 Dark"
-                            "light" -> if (currentLang == "bn") "☀️ লাইট" else "☀️ Light"
-                            else -> if (currentLang == "bn") "📱 সিস্টেম" else "📱 System"
+                            "dark" -> "🌙 " + stringResource(R.string.theme_dark)
+                            "light" -> "☀️ " + stringResource(R.string.theme_light)
+                            else -> "📱 " + stringResource(R.string.theme_system)
                         }
                         Text(
                             text = currentThemeText,
@@ -1287,7 +1287,7 @@ fun MoreScreen(
                     onClick = { showLanguageDialog = false },
                     colors = ButtonDefaults.textButtonColors(contentColor = CurrencyGold)
                 ) {
-                    Text(if (currentLang == "bn") "বন্ধ করুন" else "CANCEL", fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.btn_cancel), fontWeight = FontWeight.Bold)
                 }
             },
             icon = {
@@ -1295,7 +1295,7 @@ fun MoreScreen(
             },
             title = {
                 Text(
-                    text = if (currentLang == "bn") "ভাষা নির্বাচন করুন" else "Select Language",
+                    text = stringResource(R.string.select_language),
                     color = TextPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
@@ -1378,7 +1378,7 @@ fun MoreScreen(
                     onClick = { showThemeDialog = false },
                     colors = ButtonDefaults.textButtonColors(contentColor = CurrencyGold)
                 ) {
-                    Text(if (currentLang == "bn") "বন্ধ করুন" else "CANCEL", fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.btn_cancel), fontWeight = FontWeight.Bold)
                 }
             },
             icon = {
@@ -1399,7 +1399,7 @@ fun MoreScreen(
             },
             title = {
                 Text(
-                    text = if (currentLang == "bn") "থিম নির্বাচন করুন" else "Select Theme",
+                    text = stringResource(R.string.select_theme),
                     color = TextPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
@@ -1429,13 +1429,13 @@ fun MoreScreen(
                             Text("📱", fontSize = 22.sp)
                             Column {
                                 Text(
-                                    text = if (currentLang == "bn") "সিস্টেম ডিফল্ট" else "System Default",
+                                    text = stringResource(R.string.theme_system),
                                     color = TextPrimary,
                                     fontSize = 15.sp,
                                     fontWeight = if (currentTheme == "system") FontWeight.Bold else FontWeight.Normal
                                 )
                                 Text(
-                                    text = if (currentLang == "bn") "ডিভাইসের সিস্টেম থিম অনুসরণ করবে" else "Follow device system theme",
+                                    text = stringResource(R.string.theme_system_desc),
                                     color = TextSecondary,
                                     fontSize = 12.sp
                                 )
@@ -1469,13 +1469,13 @@ fun MoreScreen(
                             Text("☀️", fontSize = 22.sp)
                             Column {
                                 Text(
-                                    text = if (currentLang == "bn") "লাইট থিম" else "Light Theme",
+                                    text = stringResource(R.string.theme_light),
                                     color = TextPrimary,
                                     fontSize = 15.sp,
                                     fontWeight = if (currentTheme == "light") FontWeight.Bold else FontWeight.Normal
                                 )
                                 Text(
-                                    text = if (currentLang == "bn") "পরিচ্ছন্ন ও উজ্জ্বল রূপরেখা" else "Clean & bright appearance",
+                                    text = stringResource(R.string.theme_light_desc),
                                     color = TextSecondary,
                                     fontSize = 12.sp
                                 )
@@ -1509,13 +1509,13 @@ fun MoreScreen(
                             Text("🌙", fontSize = 22.sp)
                             Column {
                                 Text(
-                                    text = if (currentLang == "bn") "ডার্ক থিম" else "Dark Theme",
+                                    text = stringResource(R.string.theme_dark),
                                     color = TextPrimary,
                                     fontSize = 15.sp,
                                     fontWeight = if (currentTheme == "dark") FontWeight.Bold else FontWeight.Normal
                                 )
                                 Text(
-                                    text = if (currentLang == "bn") "গাঢ় ও আরামদায়ক রূপরেখা" else "Dark & comfortable appearance",
+                                    text = stringResource(R.string.theme_dark_desc),
                                     color = TextSecondary,
                                     fontSize = 12.sp
                                 )

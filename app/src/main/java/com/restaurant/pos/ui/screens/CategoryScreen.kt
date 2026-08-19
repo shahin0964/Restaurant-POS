@@ -21,11 +21,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.restaurant.pos.R
 import com.restaurant.pos.data.db.CategoryEntity
 import com.restaurant.pos.data.db.MenuItemEntity
 import com.restaurant.pos.ui.theme.*
@@ -77,7 +79,7 @@ fun CategoryScreen(
                         )
                     }
                     Text(
-                        text = "Category",
+                        text = stringResource(R.string.title_category),
                         color = TextPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -104,7 +106,7 @@ fun CategoryScreen(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Search category or item", color = TextMuted, fontSize = 13.sp) },
+                placeholder = { Text(stringResource(R.string.hint_search_category_item), color = TextMuted, fontSize = 13.sp) },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = TextMuted) },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = DarkSurface,
@@ -128,7 +130,7 @@ fun CategoryScreen(
             ) {
                 item(key = "cat_all", contentType = "category_chip") {
                     CategoryChip(
-                        label = "All",
+                        label = stringResource(R.string.filter_all),
                         isSelected = selectedCategoryFilter == "All",
                         onClick = { selectedCategoryFilter = "All" }
                     )
@@ -156,7 +158,7 @@ fun CategoryScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("No items found", color = TextMuted, fontSize = 14.sp)
+                    Text(stringResource(R.string.msg_no_items_found), color = TextMuted, fontSize = 14.sp)
                 }
             } else {
                 LazyVerticalGrid(
@@ -326,7 +328,7 @@ fun MenuItemGridCard(
             Spacer(modifier = Modifier.height(6.dp))
 
             Text(
-                text = "৳ ${String.format(Locale.US, "%.0f", item.price)}",
+                text = "৳ ${String.format(Locale.getDefault(), "%.0f", item.price)}",
                 color = CurrencyGold,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold

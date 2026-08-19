@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.border
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -27,6 +28,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.restaurant.pos.R
 import com.restaurant.pos.data.db.OrderWithItems
 import com.restaurant.pos.ui.components.BottomNavBar
 import com.restaurant.pos.ui.components.DynamicLogoHeader
@@ -176,8 +178,15 @@ fun DashboardScreen(
             // Greeting & Date Filter
             item {
                 Column {
+                    val cal = java.util.Calendar.getInstance()
+                    val hr = cal.get(java.util.Calendar.HOUR_OF_DAY)
+                    val greetRes = when (hr) {
+                        in 0..11 -> R.string.dashboard_greeting_morning
+                        in 12..16 -> R.string.dashboard_greeting_afternoon
+                        else -> R.string.dashboard_greeting_evening
+                    }
                     Text(
-                        text = "Good Morning,",
+                        text = stringResource(greetRes),
                         color = TextSecondary,
                         fontSize = 14.sp
                     )
@@ -224,14 +233,14 @@ fun DashboardScreen(
                         StatCard(
                             iconText = "🛍️",
                             valueText = "$totalOrders",
-                            label = "Total Orders",
+                            label = stringResource(R.string.dashboard_total_orders),
                             modifier = Modifier.weight(1f)
                         )
                         // Total Sales
                         StatCard(
                             iconText = "৳",
-                            valueText = "৳ ${String.format(Locale.US, "%,.0f", totalSales ?: 0.0)}",
-                            label = "Total Sales",
+                            valueText = "৳ ${String.format(java.util.Locale.getDefault(), "%,.0f", totalSales ?: 0.0)}",
+                            label = stringResource(R.string.dashboard_total_sales),
                             valueColor = CurrencyGold,
                             modifier = Modifier.weight(1f)
                         )
@@ -245,14 +254,14 @@ fun DashboardScreen(
                         StatCard(
                             iconText = "🍔",
                             valueText = "${menuItems.size}",
-                            label = "Total Items",
+                            label = stringResource(R.string.dashboard_total_items),
                             modifier = Modifier.weight(1f)
                         )
                         // Total Customers
                         StatCard(
                             iconText = "👥",
                             valueText = "$totalCustomersCount",
-                            label = "Total Customers",
+                            label = stringResource(R.string.dashboard_total_customers),
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -267,13 +276,13 @@ fun DashboardScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Recent Orders",
+                        text = stringResource(R.string.dashboard_recent_orders),
                         color = TextPrimary,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "View All",
+                        text = stringResource(R.string.dashboard_view_all),
                         color = CurrencyGold,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
@@ -297,7 +306,7 @@ fun DashboardScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "No orders placed yet",
+                                text = stringResource(R.string.dashboard_no_recent_orders),
                                 color = TextSecondary,
                                 fontSize = 14.sp
                             )
@@ -341,8 +350,8 @@ fun DashboardScreen(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "Notifications",
-                        color = TextPrimary,
+                                text = stringResource(R.string.more_notifications),
+                                color = TextPrimary,
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -353,8 +362,8 @@ fun DashboardScreen(
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
                                     Text(
-                                        text = "$unreadCount unread",
-                        color = TextPrimary,
+                                        text = stringResource(R.string.unread_count, unreadCount),
+                                        color = TextPrimary,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
@@ -366,7 +375,7 @@ fun DashboardScreen(
                         if (allNotifications.isNotEmpty()) {
                             TextButton(onClick = { viewModel.markAllNotificationsAsRead() }) {
                                 Text(
-                                    text = "Mark All Read",
+                                    text = stringResource(R.string.mark_all_read),
                                     color = CurrencyGold,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold
@@ -385,7 +394,7 @@ fun DashboardScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "No notifications yet",
+                                text = stringResource(R.string.no_notifications_yet),
                                 color = TextSecondary,
                                 fontSize = 14.sp
                             )
@@ -427,7 +436,7 @@ fun DashboardScreen(
                             .padding(bottom = 16.dp)
                     ) {
                         Text(
-                            text = "View All & Settings in More ⚙️",
+                            text = stringResource(R.string.view_all_notifications_settings),
                             color = CurrencyGold,
                             fontWeight = FontWeight.Bold
                         )

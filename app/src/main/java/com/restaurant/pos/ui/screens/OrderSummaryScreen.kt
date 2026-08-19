@@ -19,9 +19,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.restaurant.pos.R
 import com.restaurant.pos.ui.theme.*
 import com.restaurant.pos.ui.viewmodel.RestaurantViewModel
 import java.util.Locale
@@ -70,7 +72,7 @@ fun OrderSummaryScreen(
                         )
                     }
                     Text(
-                        text = "Order Summary",
+                        text = stringResource(R.string.title_order_summary),
                         color = TextPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -88,12 +90,13 @@ fun OrderSummaryScreen(
                     .padding(16.dp),
                 contentAlignment = Alignment.Center
             ) {
+                val toastMsg = stringResource(R.string.msg_order_placed_receipt)
                 Button(
                     onClick = {
                         isPlacing = true
                         viewModel.placeOrder(selectedPaymentMethod) { orderId ->
                             isPlacing = false
-                            Toast.makeText(context, "Order Placed & Receipt Sent to Printer", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
                             onOrderPlaced()
                         }
                     },
@@ -109,7 +112,7 @@ fun OrderSummaryScreen(
                     if (isPlacing) {
                         CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
                     } else {
-                        Text("PLACE ORDER", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text(stringResource(R.string.btn_place_order), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
                 }
             }
@@ -138,18 +141,18 @@ fun OrderSummaryScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    SummaryRow("Order Type", orderType)
+                    SummaryRow(stringResource(R.string.lbl_order_type), orderType)
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = BorderOutline)
-                    SummaryRow("Table Number", tableNumber)
+                    SummaryRow(stringResource(R.string.lbl_table_number), if (tableNumber.isNotBlank()) tableNumber else "N/A")
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = BorderOutline)
-                    SummaryRow("Customer", customerName)
+                    SummaryRow(stringResource(R.string.lbl_customer_name), if (customerName.isNotBlank()) customerName else stringResource(R.string.lbl_walkin_customer))
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
             // Items List
-            Text("Items", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.lbl_ordered_items), color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(8.dp))
 
             Card(
@@ -179,7 +182,7 @@ fun OrderSummaryScreen(
                                 modifier = Modifier.padding(horizontal = 8.dp)
                             )
                             Text(
-                                text = "৳ ${String.format(Locale.US, "%.0f", cartItem.menuItem.price * cartItem.quantity)}",
+                                text = "৳ ${String.format(Locale.getDefault(), "%.0f", cartItem.menuItem.price * cartItem.quantity)}",
                                 color = CurrencyGold,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
@@ -202,20 +205,20 @@ fun OrderSummaryScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    SummaryRow("Subtotal", "৳ ${String.format(Locale.US, "%.0f", subtotal)}")
+                    SummaryRow(stringResource(R.string.lbl_subtotal), "৳ ${String.format(Locale.getDefault(), "%.0f", subtotal)}")
                     Spacer(modifier = Modifier.height(8.dp))
-                    SummaryRow("Discount", "৳ ${String.format(Locale.US, "%.0f", discount)}")
+                    SummaryRow(stringResource(R.string.lbl_discount), "৳ ${String.format(Locale.getDefault(), "%.0f", discount)}")
                     Spacer(modifier = Modifier.height(8.dp))
-                    SummaryRow("Tax", "৳ ${String.format(Locale.US, "%.0f", tax)}")
+                    SummaryRow(stringResource(R.string.lbl_vat), "৳ ${String.format(Locale.getDefault(), "%.0f", tax)}")
                     HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = BorderOutline)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Total", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.lbl_total), color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         Text(
-                            text = "৳ ${String.format(Locale.US, "%.0f", total)}",
+                            text = "৳ ${String.format(Locale.getDefault(), "%.0f", total)}",
                             color = CurrencyGold,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
@@ -227,27 +230,32 @@ fun OrderSummaryScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Payment Method Selector
-            Text("Payment Method", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.lbl_payment_method), color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(8.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                listOf("Cash", "Card", "Mobile").forEach { method ->
-                    val isSel = selectedPaymentMethod == method
+                val methods = listOf(
+                    "Cash" to stringResource(R.string.pay_cash),
+                    "Card" to stringResource(R.string.pay_card),
+                    "Mobile" to stringResource(R.string.pay_mobile)
+                )
+                methods.forEach { (methodKey, displayLabel) ->
+                    val isSel = selectedPaymentMethod == methodKey
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(10.dp))
                             .background(if (isSel) BrandPrimary else DarkSurface)
                             .border(1.dp, if (isSel) BrandPrimary else BorderOutline, RoundedCornerShape(10.dp))
-                            .clickable { selectedPaymentMethod = method }
+                            .clickable { selectedPaymentMethod = methodKey }
                             .padding(vertical = 12.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = method,
+                            text = displayLabel,
                             color = if (isSel) Color.White else TextSecondary,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold

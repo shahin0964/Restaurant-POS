@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import java.io.File
+import com.restaurant.pos.R
 import com.restaurant.pos.data.db.CategoryEntity
 import com.restaurant.pos.data.db.MenuItemEntity
 import com.restaurant.pos.data.repository.CartItem
@@ -117,7 +119,7 @@ fun NewOrderScreen(
                         )
                     }
                     Text(
-                        text = "New Order",
+                        text = stringResource(R.string.title_new_order),
                         color = TextPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -150,9 +152,9 @@ fun NewOrderScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f, fill = false)) {
-                        Text("Total Amount", color = TextSecondary, fontSize = 11.sp)
+                        Text(stringResource(R.string.lbl_total_amount), color = TextSecondary, fontSize = 11.sp)
                         Text(
-                            text = "৳ ${String.format(Locale.US, "%.0f", total)}",
+                            text = "৳ ${String.format(Locale.getDefault(), "%.0f", total)}",
                             color = CurrencyGold,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
@@ -171,7 +173,7 @@ fun NewOrderScreen(
                             .height(44.dp)
                             .testTag("proceed_to_payment_btn")
                     ) {
-                        Text("PROCEED TO PAYMENT", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(stringResource(R.string.btn_proceed_to_payment), fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             }
@@ -195,7 +197,7 @@ fun NewOrderScreen(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search food or beverages...", color = TextMuted, fontSize = 13.sp) },
+                    placeholder = { Text(stringResource(R.string.hint_search_food), color = TextMuted, fontSize = 13.sp) },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.Search,
@@ -244,13 +246,14 @@ fun NewOrderScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                val typeLabel = when (orderType) {
+                                    "Dine In" -> stringResource(R.string.type_dine_in)
+                                    "Take Away" -> stringResource(R.string.type_takeaway)
+                                    "Delivery" -> stringResource(R.string.type_delivery)
+                                    else -> orderType
+                                }
                                 Text(
-                                    text = "Type: " + when (orderType) {
-                                        "Dine In" -> "Dine-in"
-                                        "Take Away" -> "Takeaway"
-                                        "Delivery" -> "Delivery"
-                                        else -> orderType
-                                    },
+                                    text = stringResource(R.string.lbl_type_prefix, typeLabel),
                                     color = CurrencyGold,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
@@ -272,9 +275,9 @@ fun NewOrderScreen(
                             modifier = Modifier.background(DarkSurface)
                         ) {
                             val types = listOf(
-                                "Dine-in" to "Dine In",
-                                "Takeaway" to "Take Away",
-                                "Delivery" to "Delivery"
+                                stringResource(R.string.type_dine_in) to "Dine In",
+                                stringResource(R.string.type_takeaway) to "Take Away",
+                                stringResource(R.string.type_delivery) to "Delivery"
                             )
                             types.forEach { (display, internalName) ->
                                 DropdownMenuItem(
@@ -311,9 +314,9 @@ fun NewOrderScreen(
                             ) {
                                 Text(
                                     text = if (isDineIn) {
-                                        if (tableNumber.isNotBlank()) "Table: $tableNumber" else "Select Table"
+                                        if (tableNumber.isNotBlank()) stringResource(R.string.lbl_table_prefix, tableNumber) else stringResource(R.string.lbl_select_table)
                                     } else {
-                                        "N/A (Non Dine-in)"
+                                        stringResource(R.string.lbl_non_dine_in)
                                     },
                                     color = if (isDineIn) CurrencyGold else TextMuted,
                                     fontSize = 11.sp,
@@ -343,7 +346,7 @@ fun NewOrderScreen(
                             ) {
                                 if (availableTables.isEmpty()) {
                                     DropdownMenuItem(
-                                        text = { Text("No tables available", color = TextMuted, fontSize = 12.sp) },
+                                        text = { Text(stringResource(R.string.msg_no_tables_available), color = TextMuted, fontSize = 12.sp) },
                                         onClick = { tableDropdownExpanded = false }
                                     )
                                 } else {
@@ -380,7 +383,7 @@ fun NewOrderScreen(
                     item(key = "all_categories", contentType = "category_badge") {
                         val isAllSelected = selectedCategory == null
                         CategoryItemBadge(
-                            name = "All Items",
+                            name = stringResource(R.string.lbl_all_items),
                             emoji = "🍽️",
                             isSelected = isAllSelected,
                             onClick = { selectedCategory = null }
@@ -432,7 +435,7 @@ fun NewOrderScreen(
                             .fillMaxWidth(),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("No products found", color = TextMuted, fontSize = 13.sp)
+                        Text(stringResource(R.string.msg_no_products_found), color = TextMuted, fontSize = 13.sp)
                     }
                 } else {
                     val cartQtyMap = remember(cartItems) {
@@ -648,7 +651,7 @@ fun ProductGridCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "৳ ${String.format(Locale.US, "%.0f", item.price)}",
+                            text = "৳ ${String.format(Locale.getDefault(), "%.0f", item.price)}",
                             color = CurrencyGold,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
@@ -744,7 +747,7 @@ fun CurrentOrderExpandablePanel(
                         )
                     }
                     Text(
-                        text = "Current Order List",
+                        text = stringResource(R.string.title_current_order_list),
                         color = TextPrimary,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
@@ -756,7 +759,7 @@ fun CurrentOrderExpandablePanel(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        text = if (isExpanded) "Hide Details" else "Show Details",
+                        text = if (isExpanded) stringResource(R.string.lbl_hide_details) else stringResource(R.string.lbl_show_details),
                         color = CurrencyGold,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
@@ -789,7 +792,7 @@ fun CurrentOrderExpandablePanel(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "No items in current order",
+                                stringResource(R.string.msg_no_items_in_cart),
                                 color = TextMuted,
                                 fontSize = 12.sp,
                                 textAlign = TextAlign.Center
@@ -894,7 +897,7 @@ fun ExpandedCartRow(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "৳ ${String.format(Locale.US, "%.0f", cartItem.menuItem.price * cartItem.quantity)}",
+                    text = "৳ ${String.format(Locale.getDefault(), "%.0f", cartItem.menuItem.price * cartItem.quantity)}",
                     color = CurrencyGold,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold

@@ -19,9 +19,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.restaurant.pos.R
 import com.restaurant.pos.data.db.MenuItemEntity
 import com.restaurant.pos.ui.theme.*
 import com.restaurant.pos.ui.viewmodel.RestaurantViewModel
@@ -116,13 +118,13 @@ fun AddItemCartScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "Cart ($cartCount items)",
+                                    text = stringResource(R.string.lbl_cart_items_count, cartCount),
                                     color = TextPrimary,
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "৳ ${String.format(Locale.US, "%.0f", cartTotal)}",
+                                    text = "৳ ${String.format(Locale.getDefault(), "%.0f", cartTotal)}",
                                     color = CurrencyGold,
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold
@@ -147,7 +149,7 @@ fun AddItemCartScreen(
                                         modifier = Modifier.weight(1f, fill = false)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("৳ ${String.format(Locale.US, "%.0f", ci.menuItem.price * ci.quantity)}", color = CurrencyGold, fontSize = 12.sp)
+                                    Text("৳ ${String.format(Locale.getDefault(), "%.0f", ci.menuItem.price * ci.quantity)}", color = CurrencyGold, fontSize = 12.sp)
                                 }
                             }
 
@@ -162,7 +164,7 @@ fun AddItemCartScreen(
                                     .height(46.dp)
                                     .testTag("view_cart_btn")
                             ) {
-                                Text("VIEW CART", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text(stringResource(R.string.btn_view_cart), fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             }
                         }
                     }
@@ -244,7 +246,7 @@ fun AddItemCartScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "৳ ${String.format(Locale.US, "%.0f", selectedDish.price)}",
+                        text = "৳ ${String.format(Locale.getDefault(), "%.0f", selectedDish.price)}",
                         color = CurrencyGold,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold
@@ -255,7 +257,7 @@ fun AddItemCartScreen(
 
                 // Description
                 Text(
-                    text = "Description",
+                    text = stringResource(R.string.lbl_description),
                     color = TextPrimary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
@@ -278,7 +280,7 @@ fun AddItemCartScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Quantity", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.lbl_qty), color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -324,7 +326,7 @@ fun AddItemCartScreen(
                         .height(50.dp)
                         .testTag("add_to_cart_btn")
                 ) {
-                    Text("ADD TO CART", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text(stringResource(R.string.btn_add_to_cart), fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))

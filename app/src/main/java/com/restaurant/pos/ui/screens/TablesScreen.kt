@@ -24,10 +24,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.restaurant.pos.R
 import com.restaurant.pos.data.db.TableEntity
 import com.restaurant.pos.ui.theme.*
 import com.restaurant.pos.ui.viewmodel.RestaurantViewModel
@@ -77,8 +79,8 @@ fun TablesScreen(
                             )
                         }
                         Text(
-                            text = "Tables / Dine-in",
-                        color = TextPrimary,
+                            text = stringResource(R.string.title_tables_dine_in),
+                            color = TextPrimary,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
@@ -143,17 +145,17 @@ fun TablesScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("TOTAL TABLES", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.stat_total_tables), color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         Text("$totalTables", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     }
                     Box(modifier = Modifier.width(1.dp).height(30.dp).background(BorderOutline))
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("AVAILABLE", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.stat_available), color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         Text("$availableCount", color = StatusReady, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     }
                     Box(modifier = Modifier.width(1.dp).height(30.dp).background(BorderOutline))
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("OCCUPIED", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.stat_occupied), color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         Text("$occupiedCount", color = StatusPreparing, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     }
                 }
@@ -167,13 +169,13 @@ fun TablesScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("No tables configured", color = TextMuted, fontSize = 15.sp)
+                        Text(stringResource(R.string.msg_no_tables_configured), color = TextMuted, fontSize = 15.sp)
                         Spacer(modifier = Modifier.height(12.dp))
                         Button(
                             onClick = { showAddDialog = true },
                             colors = ButtonDefaults.buttonColors(containerColor = CurrencyGold, contentColor = Color.Black)
                         ) {
-                            Text("ADD TABLE", fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.btn_add_table), fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -236,7 +238,7 @@ fun TablesScreen(
                                             .padding(horizontal = 8.dp, vertical = 4.dp)
                                     ) {
                                         Text(
-                                            text = if (isOccupied) "OCCUPIED" else "AVAILABLE",
+                                            text = if (isOccupied) stringResource(R.string.lbl_occupied_tag) else stringResource(R.string.lbl_available_tag),
                                             color = if (isOccupied) StatusPreparing else StatusReady,
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold
@@ -257,7 +259,7 @@ fun TablesScreen(
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Text(
-                                        text = "${table.capacity} Seats",
+                                        text = stringResource(R.string.lbl_seats_count, table.capacity),
                                         color = TextSecondary,
                                         fontSize = 12.sp
                                     )
@@ -277,19 +279,19 @@ fun TablesScreen(
                                             .padding(8.dp)
                                     ) {
                                         Text(
-                                            text = "Order ${order.orderNumber}",
+                                            text = stringResource(R.string.lbl_order_number_prefix, order.orderNumber),
                                             color = CurrencyGold,
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(
-                                            text = "Total: ৳${String.format(Locale.US, "%.0f", order.total)}",
+                                            text = "${stringResource(R.string.lbl_total)}: ৳${String.format(Locale.getDefault(), "%.0f", order.total)}",
                                             color = TextPrimary,
                         fontSize = 12.sp,
                                             fontWeight = FontWeight.Medium
                                         )
                                         Text(
-                                            text = "Status: ${order.status}",
+                                            text = "${stringResource(R.string.lbl_status_prefix)} ${order.status}",
                                             color = TextSecondary,
                                             fontSize = 11.sp
                                         )
@@ -310,12 +312,12 @@ fun TablesScreen(
                                                 modifier = Modifier.size(14.dp)
                                             )
                                             Spacer(modifier = Modifier.width(4.dp))
-                                            Text("VIEW ORDER", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            Text(stringResource(R.string.btn_view_order), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                         }
                                     }
                                 } else {
                                     Text(
-                                        text = "Ready for new order",
+                                        text = stringResource(R.string.lbl_ready_for_order),
                                         color = TextMuted,
                                         fontSize = 11.sp
                                     )
@@ -324,6 +326,7 @@ fun TablesScreen(
                                 Spacer(modifier = Modifier.height(8.dp))
 
                                 // Table Actions (Edit / Delete)
+                                val cannotDeleteMsg = stringResource(R.string.msg_table_active_order_cannot_delete)
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.End,
@@ -343,7 +346,7 @@ fun TablesScreen(
                                     IconButton(
                                         onClick = {
                                             if (isOccupied) {
-                                                Toast.makeText(context, "This table has an active order and cannot be deleted.", Toast.LENGTH_LONG).show()
+                                                Toast.makeText(context, cannotDeleteMsg, Toast.LENGTH_LONG).show()
                                             } else {
                                                 tableToDelete = table
                                             }
@@ -368,9 +371,10 @@ fun TablesScreen(
     }
 
     // ADD TABLE DIALOG
+    val msgTableCreated = stringResource(R.string.msg_table_created)
     if (showAddDialog) {
         TableFormDialog(
-            title = "ADD NEW TABLE",
+            title = stringResource(R.string.title_add_new_table),
             initialName = "",
             initialCapacity = "4",
             onDismiss = { showAddDialog = false },
@@ -381,7 +385,7 @@ fun TablesScreen(
                     capacity = cap,
                     onSuccess = {
                         showAddDialog = false
-                        Toast.makeText(context, "Table created successfully", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, msgTableCreated, Toast.LENGTH_SHORT).show()
                     },
                     onError = { err ->
                         Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
@@ -392,9 +396,10 @@ fun TablesScreen(
     }
 
     // EDIT TABLE DIALOG
+    val msgTableUpdated = stringResource(R.string.msg_table_updated)
     tableToEdit?.let { table ->
         TableFormDialog(
-            title = "EDIT TABLE",
+            title = stringResource(R.string.title_edit_table),
             initialName = table.name,
             initialCapacity = table.capacity.toString(),
             onDismiss = { tableToEdit = null },
@@ -404,7 +409,7 @@ fun TablesScreen(
                     table = table.copy(name = name, capacity = cap),
                     onSuccess = {
                         tableToEdit = null
-                        Toast.makeText(context, "Table updated successfully", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, msgTableUpdated, Toast.LENGTH_SHORT).show()
                     },
                     onError = { err ->
                         Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
@@ -415,14 +420,15 @@ fun TablesScreen(
     }
 
     // DELETE CONFIRMATION DIALOG
+    val msgTableDeleted = stringResource(R.string.msg_table_deleted)
     tableToDelete?.let { table ->
         AlertDialog(
             onDismissRequest = { tableToDelete = null },
             title = {
-                Text("DELETE TABLE", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text(stringResource(R.string.title_delete_table), color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             },
             text = {
-                Text("Are you sure you want to delete ${table.name}?", color = TextSecondary, fontSize = 14.sp)
+                Text(stringResource(R.string.msg_confirm_delete_table, table.name), color = TextSecondary, fontSize = 14.sp)
             },
             confirmButton = {
                 Button(
@@ -432,7 +438,7 @@ fun TablesScreen(
                         viewModel.deleteTable(
                             table = t,
                             onSuccess = {
-                                Toast.makeText(context, "Table deleted", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, msgTableDeleted, Toast.LENGTH_SHORT).show()
                             },
                             onError = { err ->
                                 Toast.makeText(context, err, Toast.LENGTH_LONG).show()
@@ -442,12 +448,12 @@ fun TablesScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = StatusCancelled, contentColor = Color.White),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("DELETE", fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.btn_delete_action), fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { tableToDelete = null }) {
-                    Text("CANCEL", color = TextMuted)
+                    Text(stringResource(R.string.btn_cancel), color = TextMuted)
                 }
             },
             containerColor = DarkSurface,
@@ -477,7 +483,7 @@ private fun TableFormDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Table Name (e.g. Table 7)") },
+                    label = { Text(stringResource(R.string.hint_table_name)) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextPrimary,
@@ -495,7 +501,7 @@ private fun TableFormDialog(
                 OutlinedTextField(
                     value = capacity,
                     onValueChange = { capacity = it },
-                    label = { Text("Capacity / Seats") },
+                    label = { Text(stringResource(R.string.hint_table_capacity)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -517,12 +523,12 @@ private fun TableFormDialog(
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.testTag("save_table_btn")
             ) {
-                Text("SAVE", fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.btn_save), fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("CANCEL", color = TextMuted)
+                Text(stringResource(R.string.btn_cancel), color = TextMuted)
             }
         },
         containerColor = DarkSurface,

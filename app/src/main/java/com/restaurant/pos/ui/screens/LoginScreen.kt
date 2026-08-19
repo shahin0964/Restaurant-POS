@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -169,7 +170,7 @@ fun LoginScreen(
             
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "Smart Restaurant Management",
+                text = stringResource(R.string.login_sub_title),
                 color = Color(0xCCFFFFFF),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium
@@ -191,14 +192,14 @@ fun LoginScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = if (isSignUpMode) "Join Us!" else "Welcome Back!",
+                        text = if (isSignUpMode) stringResource(R.string.login_join_us) else stringResource(R.string.login_welcome_back),
                         color = textDark,
                         fontSize = 24.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = if (isSignUpMode) "Create an account to continue" else "Login to continue to your account",
+                        text = if (isSignUpMode) stringResource(R.string.login_subtitle_signup) else stringResource(R.string.login_subtitle_welcome),
                         color = textGray,
                         fontSize = 14.sp
                     )
@@ -210,7 +211,7 @@ fun LoginScreen(
                         OutlinedTextField(
                             value = name,
                             onValueChange = { name = it },
-                            placeholder = { Text("Full Name", color = textGray) },
+                            placeholder = { Text(stringResource(R.string.lbl_full_name), color = textGray) },
                             leadingIcon = {
                                 Icon(Icons.Outlined.PersonOutline, contentDescription = "Name", tint = primaryOrange)
                             },
@@ -238,7 +239,7 @@ fun LoginScreen(
                             emailOrPhone = it
                             if (errorMessage.isNotEmpty()) errorMessage = ""
                         },
-                        placeholder = { Text("Email Address", color = textGray) },
+                        placeholder = { Text(stringResource(R.string.lbl_email_address), color = textGray) },
                         leadingIcon = {
                             Icon(Icons.Outlined.PersonOutline, contentDescription = "User", tint = primaryOrange)
                         },
@@ -266,7 +267,7 @@ fun LoginScreen(
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
-                        placeholder = { Text("Password", color = textGray) },
+                        placeholder = { Text(stringResource(R.string.lbl_password), color = textGray) },
                         singleLine = true,
                         visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         leadingIcon = {
@@ -311,10 +312,10 @@ fun LoginScreen(
                                 modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Remember Me", color = textDark, fontSize = 13.sp)
+                            Text(stringResource(R.string.lbl_remember_me), color = textDark, fontSize = 13.sp)
                         }
                         Text(
-                            text = "Forgot Password?",
+                            text = stringResource(R.string.lbl_forgot_password),
                             color = primaryOrange,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -380,7 +381,7 @@ fun LoginScreen(
                                 Icon(Icons.Default.Lock, contentDescription = "Secure", modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = if (isSignUpMode) "REGISTER SECURELY" else "LOGIN SECURELY",
+                                    text = if (isSignUpMode) stringResource(R.string.btn_signup) else stringResource(R.string.btn_login),
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 0.5.sp
@@ -486,7 +487,7 @@ fun LoginScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.AccountCircle, contentDescription = "Google", tint = Color.Red, modifier = Modifier.size(24.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Continue with Google", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            Text(stringResource(R.string.btn_sign_in_with_google), fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                     
@@ -524,12 +525,12 @@ fun LoginScreen(
                     // Sign Up/Login Toggle
                     Row {
                         Text(
-                            text = if (isSignUpMode) "Already have an account? " else "Don't have an account? ", 
+                            text = if (isSignUpMode) stringResource(R.string.lbl_already_have_account) + " " else stringResource(R.string.lbl_dont_have_account) + " ", 
                             color = textDark, 
                             fontSize = 14.sp
                         )
                         Text(
-                            text = if (isSignUpMode) "Login" else "Sign Up",
+                            text = if (isSignUpMode) stringResource(R.string.btn_login) else stringResource(R.string.btn_signup),
                             color = primaryOrange,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,

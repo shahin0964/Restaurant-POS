@@ -17,9 +17,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.restaurant.pos.R
 import com.restaurant.pos.data.db.OrderWithItems
 import com.restaurant.pos.ui.theme.*
 import com.restaurant.pos.ui.viewmodel.RestaurantViewModel
@@ -46,7 +48,7 @@ fun OrderDetailsScreen(
 
     if (currentOrderWithItems == null) {
         Box(modifier = Modifier.fillMaxSize().background(DarkBackground), contentAlignment = Alignment.Center) {
-            Text("Order not found", color = TextMuted)
+            Text(stringResource(R.string.msg_order_not_found), color = TextMuted)
         }
         return
     }
@@ -63,7 +65,7 @@ fun OrderDetailsScreen(
         AlertDialog(
             onDismissRequest = { showPaymentConfirmationDialog = false },
             title = { Text(
-                    text = "PAYMENT CONFIRMATION",
+                    text = stringResource(R.string.title_confirm_payment),
                     color = TextPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp
@@ -71,7 +73,7 @@ fun OrderDetailsScreen(
             },
             text = {
                 Text(
-                    text = "Confirm payment for this order?",
+                    text = stringResource(R.string.msg_confirm_payment_order),
                     color = TextSecondary,
                     fontSize = 14.sp
                 )
@@ -93,14 +95,14 @@ fun OrderDetailsScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = CurrencyGold, contentColor = Color.Black),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("CONFIRM", fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.btn_confirm), fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(
                     onClick = { showPaymentConfirmationDialog = false }
                 ) {
-                    Text("CANCEL", color = TextMuted)
+                    Text(stringResource(R.string.btn_cancel), color = TextMuted)
                 }
             },
             containerColor = DarkSurface,
@@ -132,7 +134,7 @@ fun OrderDetailsScreen(
                         )
                     }
                     Text(
-                        text = "Order Details",
+                        text = stringResource(R.string.title_order_details),
                         color = TextPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -183,8 +185,15 @@ fun OrderDetailsScreen(
                         )
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
+                    val statusLabel = when {
+                        isAlreadyPaid -> stringResource(R.string.status_paid)
+                        order.status == "Pending" -> stringResource(R.string.status_pending)
+                        order.status == "Preparing" -> stringResource(R.string.status_preparing)
+                        order.status == "Ready" -> stringResource(R.string.status_ready)
+                        else -> order.status
+                    }
                     Text(
-                        text = if (isAlreadyPaid) "Paid" else order.status,
+                        text = statusLabel,
                         color = when {
                             isAlreadyPaid -> StatusReady
                             order.status == "Pending" -> StatusPending
@@ -207,20 +216,20 @@ fun OrderDetailsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    SummaryRow("Customer Name", order.customerName)
+                    SummaryRow(stringResource(R.string.lbl_customer_name), if (order.customerName.isNotBlank()) order.customerName else stringResource(R.string.lbl_walkin_customer))
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = BorderOutline)
-                    SummaryRow("Order Type", order.orderType)
+                    SummaryRow(stringResource(R.string.lbl_order_type), order.orderType)
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = BorderOutline)
-                    SummaryRow("Table Number", if (order.tableNumber.isNotBlank()) order.tableNumber else "N/A")
+                    SummaryRow(stringResource(R.string.lbl_table_number), if (order.tableNumber.isNotBlank()) order.tableNumber else "N/A")
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = BorderOutline)
-                    SummaryRow("Time", timeStr)
+                    SummaryRow(stringResource(R.string.lbl_time), timeStr)
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
             // Items List
-            Text("Ordered Items", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.lbl_ordered_items), color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(8.dp))
 
             Card(
@@ -239,12 +248,12 @@ fun OrderDetailsScreen(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = "${item.quantity} x ${item.menuItemName}",
-                        color = TextPrimary,
+                                        color = TextPrimary,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Medium
                                     )
                                     Text(
-                                        text = "৳ ${String.format(Locale.US, "%.0f", item.pricePerUnit)} / unit",
+                                        text = "৳ ${String.format(Locale.getDefault(), "%.0f", item.pricePerUnit)} / unit",
                                         color = TextMuted,
                                         fontSize = 11.sp
                                     )
@@ -257,7 +266,7 @@ fun OrderDetailsScreen(
                                     }
                                 }
                                 Text(
-                                    text = "৳ ${String.format(Locale.US, "%.0f", item.pricePerUnit * item.quantity)}",
+                                    text = "৳ ${String.format(Locale.getDefault(), "%.0f", item.pricePerUnit * item.quantity)}",
                                     color = CurrencyGold,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
@@ -280,28 +289,28 @@ fun OrderDetailsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    SummaryRow("Subtotal", "৳ ${String.format(Locale.US, "%.0f", order.subtotal)}")
+                    SummaryRow(stringResource(R.string.lbl_subtotal), "৳ ${String.format(Locale.getDefault(), "%.0f", order.subtotal)}")
                     Spacer(modifier = Modifier.height(6.dp))
-                    SummaryRow("Discount", "৳ ${String.format(Locale.US, "%.0f", order.discount)}")
+                    SummaryRow(stringResource(R.string.lbl_discount), "৳ ${String.format(Locale.getDefault(), "%.0f", order.discount)}")
                     Spacer(modifier = Modifier.height(6.dp))
-                    SummaryRow("Tax", "৳ ${String.format(Locale.US, "%.0f", order.tax)}")
+                    SummaryRow(stringResource(R.string.lbl_vat), "৳ ${String.format(Locale.getDefault(), "%.0f", order.tax)}")
                     HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = BorderOutline)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Total", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.lbl_total), color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         Text(
-                            text = "৳ ${String.format(Locale.US, "%.0f", order.total)}",
+                            text = "৳ ${String.format(Locale.getDefault(), "%.0f", order.total)}",
                             color = CurrencyGold,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
-                    SummaryRow("Payment Method", order.paymentMethod)
+                    SummaryRow(stringResource(R.string.lbl_payment_method), order.paymentMethod)
                     Spacer(modifier = Modifier.height(6.dp))
-                    SummaryRow("Payment Status", if (isAlreadyPaid) "Paid" else "Unpaid")
+                    SummaryRow(stringResource(R.string.lbl_payment_status), if (isAlreadyPaid) stringResource(R.string.status_paid) else stringResource(R.string.status_unpaid))
                 }
             }
 
@@ -323,7 +332,7 @@ fun OrderDetailsScreen(
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f).height(46.dp)
                         ) {
-                            Text("CANCEL ORDER", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.btn_cancel_order), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -336,7 +345,7 @@ fun OrderDetailsScreen(
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f).height(46.dp)
                         ) {
-                            Text("PAYMENT", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.btn_pay), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -349,7 +358,7 @@ fun OrderDetailsScreen(
                         .padding(vertical = 12.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("ORDER PAID & COMPLETED", color = StatusReady, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text(stringResource(R.string.msg_order_paid_completed), color = StatusReady, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
             }
 
@@ -368,7 +377,7 @@ fun OrderDetailsScreen(
             ) {
                 Icon(Icons.Default.Print, contentDescription = "Print", tint = CurrencyGold, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("PRINT RECEIPT", color = CurrencyGold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text(stringResource(R.string.btn_print_receipt), color = CurrencyGold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
             }
 
 

@@ -27,12 +27,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.restaurant.pos.R
 import com.restaurant.pos.data.db.ReceiptSettingEntity
 import com.restaurant.pos.ui.components.BottomNavBar
 import com.restaurant.pos.ui.theme.*
@@ -174,7 +176,7 @@ fun InvoiceReceiptSettingsScreen(
                         )
                     }
                     Text(
-                        text = "Receipt Settings",
+                        text = stringResource(R.string.title_receipt_settings),
                         color = TextPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -188,7 +190,7 @@ fun InvoiceReceiptSettingsScreen(
                     Button(
                         onClick = {
                             viewModel.saveReceiptSetting(buildCurrentEntity())
-                            Toast.makeText(context, "Receipt settings saved", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.msg_receipt_saved), Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = CurrencyGold, contentColor = Color.Black),
                         shape = RoundedCornerShape(8.dp),
@@ -196,7 +198,7 @@ fun InvoiceReceiptSettingsScreen(
                     ) {
                         Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("SAVE", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text(stringResource(R.string.btn_save_caps), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
             }
@@ -229,8 +231,8 @@ fun InvoiceReceiptSettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text("Thermal Receipt Formatting", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text("Configure content & branding printed on receipts", color = TextMuted, fontSize = 11.sp)
+                            Text(stringResource(R.string.title_thermal_formatting), color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(stringResource(R.string.desc_thermal_formatting), color = TextMuted, fontSize = 11.sp)
                         }
 
                         Button(
@@ -241,7 +243,7 @@ fun InvoiceReceiptSettingsScreen(
                         ) {
                             Icon(Icons.Default.ReceiptLong, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("PREVIEW", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            Text(stringResource(R.string.btn_preview), fontWeight = FontWeight.Bold, fontSize = 11.sp)
                         }
                     }
                 }
@@ -258,12 +260,12 @@ fun InvoiceReceiptSettingsScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text("SHOP INFORMATION", color = CurrencyGold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(stringResource(R.string.section_shop_info), color = CurrencyGold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
 
                         OutlinedTextField(
                             value = shopName,
                             onValueChange = { shopName = it },
-                            label = { Text("Shop / Restaurant Name", color = TextMuted) },
+                            label = { Text(stringResource(R.string.lbl_shop_restaurant_name), color = TextMuted) },
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedContainerColor = DarkSurfaceVariant,
@@ -279,7 +281,7 @@ fun InvoiceReceiptSettingsScreen(
                         OutlinedTextField(
                             value = phone,
                             onValueChange = { phone = it },
-                            label = { Text("Phone Number", color = TextMuted) },
+                            label = { Text(stringResource(R.string.lbl_phone), color = TextMuted) },
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedContainerColor = DarkSurfaceVariant,
@@ -295,7 +297,7 @@ fun InvoiceReceiptSettingsScreen(
                         OutlinedTextField(
                             value = address,
                             onValueChange = { address = it },
-                            label = { Text("Address", color = TextMuted) },
+                            label = { Text(stringResource(R.string.lbl_address), color = TextMuted) },
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedContainerColor = DarkSurfaceVariant,
@@ -315,7 +317,7 @@ fun InvoiceReceiptSettingsScreen(
                             OutlinedTextField(
                                 value = email,
                                 onValueChange = { email = it },
-                                label = { Text("Email (Opt)", color = TextMuted, fontSize = 11.sp) },
+                                label = { Text(stringResource(R.string.lbl_email_opt), color = TextMuted, fontSize = 11.sp) },
                                 singleLine = true,
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedContainerColor = DarkSurfaceVariant,
@@ -331,7 +333,7 @@ fun InvoiceReceiptSettingsScreen(
                             OutlinedTextField(
                                 value = website,
                                 onValueChange = { website = it },
-                                label = { Text("Website (Opt)", color = TextMuted, fontSize = 11.sp) },
+                                label = { Text(stringResource(R.string.lbl_website_opt), color = TextMuted, fontSize = 11.sp) },
                                 singleLine = true,
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedContainerColor = DarkSurfaceVariant,
@@ -359,7 +361,7 @@ fun InvoiceReceiptSettingsScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text("SHOP LOGO", color = CurrencyGold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(stringResource(R.string.section_shop_logo), color = CurrencyGold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
 
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -392,7 +394,7 @@ fun InvoiceReceiptSettingsScreen(
                                         colors = ButtonDefaults.buttonColors(containerColor = CurrencyGold, contentColor = Color.Black),
                                         shape = RoundedCornerShape(6.dp)
                                     ) {
-                                        Text("ADD LOGO", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                        Text(stringResource(R.string.btn_add_logo), fontWeight = FontWeight.Bold, fontSize = 11.sp)
                                     }
                                 } else {
                                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -401,7 +403,7 @@ fun InvoiceReceiptSettingsScreen(
                                             colors = ButtonDefaults.buttonColors(containerColor = DarkSurfaceVariant, contentColor = CurrencyGold),
                                             shape = RoundedCornerShape(6.dp)
                                         ) {
-                                            Text("CHANGE", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                            Text(stringResource(R.string.btn_change), fontWeight = FontWeight.Bold, fontSize = 11.sp)
                                         }
 
                                         OutlinedButton(
@@ -410,7 +412,7 @@ fun InvoiceReceiptSettingsScreen(
                                             border = androidx.compose.foundation.BorderStroke(1.dp, StatusCancelled),
                                             shape = RoundedCornerShape(6.dp)
                                         ) {
-                                            Text("REMOVE", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                            Text(stringResource(R.string.btn_remove), fontWeight = FontWeight.Bold, fontSize = 11.sp)
                                         }
                                     }
                                 }
@@ -431,25 +433,25 @@ fun InvoiceReceiptSettingsScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text("RECEIPT CONTENT VISIBILITY", color = CurrencyGold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(stringResource(R.string.section_receipt_visibility), color = CurrencyGold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
 
-                        VisibilitySwitchRow("Shop Name", showShopName) { showShopName = it }
-                        VisibilitySwitchRow("Logo", showLogo) { showLogo = it }
-                        VisibilitySwitchRow("Phone Number", showPhone) { showPhone = it }
-                        VisibilitySwitchRow("Address", showAddress) { showAddress = it }
-                        VisibilitySwitchRow("Order Number", showOrderNumber) { showOrderNumber = it }
-                        VisibilitySwitchRow("Date & Time", showDateTime) { showDateTime = it }
-                        VisibilitySwitchRow("Customer Name", showCustomerName) { showCustomerName = it }
-                        VisibilitySwitchRow("Table / Order Type", showOrderType) { showOrderType = it }
-                        VisibilitySwitchRow("Ordered Items", showItems) { showItems = it }
-                        VisibilitySwitchRow("Item Quantity", showQuantity) { showQuantity = it }
-                        VisibilitySwitchRow("Item Price", showItemPrice) { showItemPrice = it }
-                        VisibilitySwitchRow("Subtotal", showSubtotal) { showSubtotal = it }
-                        VisibilitySwitchRow("Discount", showDiscount) { showDiscount = it }
-                        VisibilitySwitchRow("Tax", showTax) { showTax = it }
-                        VisibilitySwitchRow("Total Amount", showTotal) { showTotal = it }
-                        VisibilitySwitchRow("Payment Status", showPaymentStatus) { showPaymentStatus = it }
-                        VisibilitySwitchRow("Receipt Footer Text", showFooter) { showFooter = it }
+                        VisibilitySwitchRow(stringResource(R.string.lbl_shop_name), showShopName) { showShopName = it }
+                        VisibilitySwitchRow(stringResource(R.string.lbl_logo), showLogo) { showLogo = it }
+                        VisibilitySwitchRow(stringResource(R.string.lbl_phone), showPhone) { showPhone = it }
+                        VisibilitySwitchRow(stringResource(R.string.lbl_address), showAddress) { showAddress = it }
+                        VisibilitySwitchRow(stringResource(R.string.lbl_order_number), showOrderNumber) { showOrderNumber = it }
+                        VisibilitySwitchRow(stringResource(R.string.lbl_date_time), showDateTime) { showDateTime = it }
+                        VisibilitySwitchRow(stringResource(R.string.lbl_customer_name), showCustomerName) { showCustomerName = it }
+                        VisibilitySwitchRow(stringResource(R.string.lbl_table_order_type), showOrderType) { showOrderType = it }
+                        VisibilitySwitchRow(stringResource(R.string.lbl_ordered_items), showItems) { showItems = it }
+                        VisibilitySwitchRow(stringResource(R.string.lbl_item_quantity), showQuantity) { showQuantity = it }
+                        VisibilitySwitchRow(stringResource(R.string.lbl_item_price), showItemPrice) { showItemPrice = it }
+                        VisibilitySwitchRow(stringResource(R.string.lbl_subtotal), showSubtotal) { showSubtotal = it }
+                        VisibilitySwitchRow(stringResource(R.string.lbl_discount), showDiscount) { showDiscount = it }
+                        VisibilitySwitchRow(stringResource(R.string.lbl_vat), showTax) { showTax = it }
+                        VisibilitySwitchRow(stringResource(R.string.lbl_total_amount), showTotal) { showTotal = it }
+                        VisibilitySwitchRow(stringResource(R.string.lbl_payment_status), showPaymentStatus) { showPaymentStatus = it }
+                        VisibilitySwitchRow(stringResource(R.string.lbl_receipt_footer_text), showFooter) { showFooter = it }
                     }
                 }
             }
@@ -465,12 +467,12 @@ fun InvoiceReceiptSettingsScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text("RECEIPT FOOTER", color = CurrencyGold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(stringResource(R.string.section_receipt_footer), color = CurrencyGold, fontWeight = FontWeight.Bold, fontSize = 13.sp)
 
                         OutlinedTextField(
                             value = footerText,
                             onValueChange = { footerText = it },
-                            placeholder = { Text("Enter receipt footer message...", color = TextMuted) },
+                            placeholder = { Text(stringResource(R.string.hint_enter_footer), color = TextMuted) },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedContainerColor = DarkSurfaceVariant,
                                 unfocusedContainerColor = DarkSurfaceVariant,
@@ -496,27 +498,27 @@ fun InvoiceReceiptSettingsScreen(
         AlertDialog(
             onDismissRequest = { showResetDialog = false },
             title = {
-                Text("Reset receipt settings?", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(stringResource(R.string.title_reset_receipt_settings), color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             },
             text = {
-                Text("This will restore default receipt visibility and clear shop information fields. Orders, inventory, and reports will remain untouched.", color = TextSecondary, fontSize = 13.sp)
+                Text(stringResource(R.string.msg_reset_receipt_settings), color = TextSecondary, fontSize = 13.sp)
             },
             confirmButton = {
                 Button(
                     onClick = {
                         val defaultSetting = ReceiptSettingEntity()
                         viewModel.saveReceiptSetting(defaultSetting)
-                        Toast.makeText(context, "Receipt settings reset", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.msg_receipt_reset), Toast.LENGTH_SHORT).show()
                         showResetDialog = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = StatusCancelled)
                 ) {
-                    Text("RESET", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.btn_reset_caps), color = Color.White, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showResetDialog = false }) {
-                    Text("CANCEL", color = TextSecondary)
+                    Text(stringResource(R.string.btn_cancel), color = TextSecondary)
                 }
             },
             containerColor = DarkSurface
@@ -528,7 +530,7 @@ fun InvoiceReceiptSettingsScreen(
         AlertDialog(
             onDismissRequest = { showPreviewDialog = false },
             title = {
-                Text("Receipt Thermal Preview", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text(stringResource(R.string.title_receipt_preview), color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             },
             text = {
                 Card(
