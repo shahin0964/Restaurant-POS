@@ -128,56 +128,72 @@ class PrinterRepository(
 
     /**
      * Converts a rendered bitmap to standard ESC/POS raster image bytes (GS v 0).
+     * Ensures strict 8-byte width alignment, line-spacing reset, and luminance thresholding.
      */
     private fun bitmapToEscPosBytes(bitmap: Bitmap): ByteArray {
-        val width = bitmap.width
-        val height = bitmap.height
-        val widthBytes = (width + 7) / 8
+        val originalWidth = bitmap.width
+        val originalHeight = bitmap.height
+        val widthBytes = (originalWidth + 7) / 8
+        val paddedWidth = widthBytes * 8
+
+        val workingBitmap = if (originalWidth != paddedWidth) {
+            val bmp = Bitmap.createBitmap(paddedWidth, originalHeight, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bmp)
+            canvas.drawColor(Color.WHITE)
+            canvas.drawBitmap(bitmap, 0f, 0f, null)
+            bmp
+        } else {
+            bitmap
+        }
+
         val stream = ByteArrayOutputStream()
 
-        // Initialize printer
+        // 1. Initialize printer
         stream.write(byteArrayOf(0x1B, 0x40))
-        // Center alignment
+
+        // 2. Center alignment
         stream.write(byteArrayOf(0x1B, 0x61, 0x01))
 
-        // GS v 0 m xL xH yL yH
+        // 3. Reset line spacing to 0
+        stream.write(byteArrayOf(0x1B, 0x33, 0x00))
+
+        // 4. GS v 0 (Raster Bit Image Command)
         val xL = (widthBytes % 256).toByte()
         val xH = (widthBytes / 256).toByte()
-        val yL = (height % 256).toByte()
-        val yH = (height / 256).toByte()
+        val yL = (originalHeight % 256).toByte()
+        val yH = (originalHeight / 256).toByte()
 
         val header = byteArrayOf(0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH)
         stream.write(header)
 
-        val pixels = IntArray(width * height)
-        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+        val pixels = IntArray(paddedWidth * originalHeight)
+        workingBitmap.getPixels(pixels, 0, paddedWidth, 0, 0, paddedWidth, originalHeight)
 
-        val rasterData = ByteArray(widthBytes * height)
+        val rasterData = ByteArray(widthBytes * originalHeight)
         var byteIdx = 0
 
-        for (y in 0 until height) {
+        for (y in 0 until originalHeight) {
             for (xByte in 0 until widthBytes) {
                 var currentByte = 0
                 for (bit in 0 until 8) {
                     val x = xByte * 8 + bit
-                    if (x < width) {
-                        val pixel = pixels[y * width + x]
-                        val r = (pixel shr 16) and 0xFF
-                        val g = (pixel shr 8) and 0xFF
-                        val b = pixel and 0xFF
-                        val luminance = (r * 0.299 + g * 0.587 + b * 0.114).toInt()
-                        if (luminance < 180) {
-                            currentByte = currentByte or (0x80 shr bit)
-                        }
+                    val pixel = pixels[y * paddedWidth + x]
+                    val r = (pixel shr 16) and 0xFF
+                    val g = (pixel shr 8) and 0xFF
+                    val b = pixel and 0xFF
+                    val luminance = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
+                    if (luminance < 160) {
+                        currentByte = currentByte or (0x80 shr bit)
                     }
                 }
                 rasterData[byteIdx++] = currentByte.toByte()
             }
         }
+
         stream.write(rasterData)
 
-        // Line feeds & full paper cut
-        stream.write(byteArrayOf(0x1B, 0x64, 0x05))
+        // 5. Line feeds & cut command
+        stream.write(byteArrayOf(0x1B, 0x64, 0x04))
         stream.write(byteArrayOf(0x1D, 0x56, 0x41, 0x00))
 
         return stream.toByteArray()
