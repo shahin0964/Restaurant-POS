@@ -10,7 +10,6 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
 import android.graphics.Typeface
 import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
@@ -112,24 +111,11 @@ class PrinterRepository(
         val manufacturer = android.os.Build.MANUFACTURER ?: ""
         val model = android.os.Build.MODEL ?: ""
         val brand = android.os.Build.BRAND ?: ""
-        if (manufacturer.contains("SUNMI", ignoreCase = true) ||
-            model.contains("SUNMI", ignoreCase = true) ||
-            brand.contains("SUNMI", ignoreCase = true)
-        ) {
-            return true
-        }
-        return try {
-            Class.forName("com.sunmi.peripheral.printer.InnerPrinter")
-            true
-        } catch (e: ClassNotFoundException) {
-            false
-        }
+        return manufacturer.contains("SUNMI", ignoreCase = true) ||
+                model.contains("SUNMI", ignoreCase = true) ||
+                brand.contains("SUNMI", ignoreCase = true)
     }
 
-    /**
-     * Converts a rendered bitmap to standard ESC/POS raster image bytes (GS v 0).
-     * Ensures strict 8-byte width alignment, line-spacing reset, and luminance thresholding.
-     */
     private fun bitmapToEscPosBytes(bitmap: Bitmap): ByteArray {
         val originalWidth = bitmap.width
         val originalHeight = bitmap.height
@@ -147,65 +133,63 @@ class PrinterRepository(
         }
 
         val stream = ByteArrayOutputStream()
-
-        // 1. Initialize printer
-        stream.write(byteArrayOf(0x1B, 0x40))
-
-        // 2. Center alignment
-        stream.write(byteArrayOf(0x1B, 0x61, 0x01))
-
-        // 3. Reset line spacing to 0
-        stream.write(byteArrayOf(0x1B, 0x33, 0x00))
-
-        // 4. GS v 0 (Raster Bit Image Command)
-        val xL = (widthBytes % 256).toByte()
-        val xH = (widthBytes / 256).toByte()
-        val yL = (originalHeight % 256).toByte()
-        val yH = (originalHeight / 256).toByte()
-
-        val header = byteArrayOf(0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH)
-        stream.write(header)
+        stream.write(byteArrayOf(0x1B, 0x40)) // Initialize
+        stream.write(byteArrayOf(0x1B, 0x61, 0x01)) // Center
+        stream.write(byteArrayOf(0x1B, 0x33, 0x00)) // Line space 0
 
         val pixels = IntArray(paddedWidth * originalHeight)
         workingBitmap.getPixels(pixels, 0, paddedWidth, 0, 0, paddedWidth, originalHeight)
 
-        val rasterData = ByteArray(widthBytes * originalHeight)
-        var byteIdx = 0
+        val xL = (widthBytes % 256).toByte()
+        val xH = (widthBytes / 256).toByte()
 
-        for (y in 0 until originalHeight) {
-            for (xByte in 0 until widthBytes) {
-                var currentByte = 0
-                for (bit in 0 until 8) {
-                    val x = xByte * 8 + bit
-                    val pixel = pixels[y * paddedWidth + x]
-                    val r = (pixel shr 16) and 0xFF
-                    val g = (pixel shr 8) and 0xFF
-                    val b = pixel and 0xFF
-                    val luminance = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
-                    if (luminance < 160) {
-                        currentByte = currentByte or (0x80 shr bit)
+        val sliceHeight = 48
+        var currentY = 0
+
+        while (currentY < originalHeight) {
+            val chunkHeight = minOf(sliceHeight, originalHeight - currentY)
+            val yL = (chunkHeight % 256).toByte()
+            val yH = (chunkHeight / 256).toByte()
+
+            val header = byteArrayOf(0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH)
+            stream.write(header)
+
+            val rasterData = ByteArray(widthBytes * chunkHeight)
+            var byteIdx = 0
+
+            for (row in 0 until chunkHeight) {
+                val y = currentY + row
+                for (xByte in 0 until widthBytes) {
+                    var currentByte = 0
+                    for (bit in 0 until 8) {
+                        val x = xByte * 8 + bit
+                        val pixel = pixels[y * paddedWidth + x]
+                        val r = (pixel shr 16) and 0xFF
+                        val g = (pixel shr 8) and 0xFF
+                        val b = pixel and 0xFF
+                        val luminance = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
+                        if (luminance < 160) {
+                            currentByte = currentByte or (0x80 shr bit)
+                        }
                     }
+                    rasterData[byteIdx++] = currentByte.toByte()
                 }
-                rasterData[byteIdx++] = currentByte.toByte()
             }
+
+            stream.write(rasterData)
+            currentY += chunkHeight
         }
 
-        stream.write(rasterData)
-
-        // 5. Line feeds & cut command
         stream.write(byteArrayOf(0x1B, 0x64, 0x04))
         stream.write(byteArrayOf(0x1D, 0x56, 0x41, 0x00))
 
         return stream.toByteArray()
     }
 
-    /**
-     * Builds Test Receipt directly into a bitmap ensuring Unicode Bangla & all characters render accurately.
-     */
-    fun buildTestReceiptBytes(
+    fun buildTestReceiptBitmap(
         setting: PrinterSettingEntity,
         receiptSetting: ReceiptSettingEntity
-    ): ByteArray {
+    ): Bitmap {
         val targetWidth = if (setting.paperSize == "80mm") 576 else 384
         val tempBitmap = Bitmap.createBitmap(targetWidth, 3000, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(tempBitmap)
@@ -284,7 +268,7 @@ class PrinterRepository(
             "BLUETOOTH" -> if (setting.printerName.isNotBlank()) "${setting.printerName} (${setting.macAddress})" else setting.macAddress
             "WIFI_LAN" -> "${setting.ipAddress}:${setting.port}"
             "USB" -> if (setting.printerName.isNotBlank()) setting.printerName else "Attached USB Printer"
-            else -> "SUNMI / POS Built-in Thermal"
+            else -> "SUNMI V2 Pro Built-in"
         }
 
         drawLeftRight("Connection", setting.connectionType)
@@ -303,18 +287,14 @@ class PrinterRepository(
 
         y += 20f
         val finalHeight = y.toInt().coerceAtLeast(10)
-        val finalBitmap = Bitmap.createBitmap(tempBitmap, 0, 0, targetWidth, finalHeight)
-        return bitmapToEscPosBytes(finalBitmap)
+        return Bitmap.createBitmap(tempBitmap, 0, 0, targetWidth, finalHeight)
     }
 
-    /**
-     * Renders physical receipt with full Unicode Bangla font rendering onto an Android Canvas & exports as raster ESC/POS bytes.
-     */
-    fun buildReceiptBytes(
+    fun buildReceiptBitmap(
         orderWithItems: OrderWithItems,
         receiptSetting: ReceiptSettingEntity,
         paperSize: String = "58mm"
-    ): ByteArray {
+    ): Bitmap {
         val is80mm = paperSize == "80mm"
         val targetWidth = if (is80mm) 576 else 384
 
@@ -404,7 +384,6 @@ class PrinterRepository(
         val order = orderWithItems.order
         val items = orderWithItems.items
 
-        // Header Section
         if (receiptSetting.showShopName && receiptSetting.shopName.isNotBlank()) {
             drawCentered(receiptSetting.shopName, headerPaint)
         }
@@ -423,7 +402,6 @@ class PrinterRepository(
 
         drawDivider("=")
 
-        // Order Details
         if (receiptSetting.showOrderNumber && order.orderNumber.isNotBlank()) {
             val formattedOrderNo = if (order.orderNumber.startsWith("#")) order.orderNumber else "#${order.orderNumber}"
             drawLeftRight("Order No:", formattedOrderNo, isBold = true)
@@ -450,7 +428,6 @@ class PrinterRepository(
 
         drawDivider("-")
 
-        // Items Table
         if (receiptSetting.showItems && items.isNotEmpty()) {
             drawLeftRight("Item", "Qty   Price", isBold = true)
             drawDivider("-")
@@ -511,7 +488,6 @@ class PrinterRepository(
             drawDivider("-")
         }
 
-        // Totals Section
         if (receiptSetting.showSubtotal) {
             drawLeftRight("Subtotal:", formatMoney(order.subtotal))
         }
@@ -525,7 +501,6 @@ class PrinterRepository(
             drawLeftRight("TOTAL:", formatMoney(order.total), isBold = true)
         }
 
-        // Payment Details
         y += 8f
         val paidStatus = if (order.isPaid || order.status.equals("Completed", ignoreCase = true)) "Paid" else "Unpaid"
         val payMethod = if (order.paymentMethod.isNotBlank()) order.paymentMethod else "Cash"
@@ -533,28 +508,155 @@ class PrinterRepository(
 
         drawDivider("=")
 
-        // Footer
         if (receiptSetting.showFooter && receiptSetting.footerText.isNotBlank()) {
             drawCentered(receiptSetting.footerText, normalPaint)
         }
 
         y += 24f
         val finalHeight = y.toInt().coerceAtLeast(10)
-        val finalBitmap = Bitmap.createBitmap(tempBitmap, 0, 0, targetWidth, finalHeight)
-        return bitmapToEscPosBytes(finalBitmap)
+        return Bitmap.createBitmap(tempBitmap, 0, 0, targetWidth, finalHeight)
     }
 
     suspend fun printTestReceipt(setting: PrinterSettingEntity): PrintResult = withContext(Dispatchers.IO) {
         val rSetting = receiptSettingDao?.getReceiptSettingSync() ?: ReceiptSettingEntity()
-        val bytes = buildTestReceiptBytes(setting, rSetting)
-        return@withContext sendBytesToPrinterHardware(bytes, setting)
+        val bitmap = buildTestReceiptBitmap(setting, rSetting)
+        return@withContext printBitmap(bitmap, setting)
     }
 
     suspend fun printOrderReceipt(orderWithItems: OrderWithItems): PrintResult = withContext(Dispatchers.IO) {
         val pSetting = getPrinterSettingSync()
         val rSetting = receiptSettingDao?.getReceiptSettingSync() ?: ReceiptSettingEntity()
-        val bytes = buildReceiptBytes(orderWithItems, rSetting, pSetting.paperSize)
-        return@withContext sendBytesToPrinterHardware(bytes, pSetting)
+        val bitmap = buildReceiptBitmap(orderWithItems, rSetting, pSetting.paperSize)
+        return@withContext printBitmap(bitmap, pSetting)
+    }
+
+    private suspend fun printBitmap(bitmap: Bitmap, setting: PrinterSettingEntity): PrintResult {
+        if (isSunmiDevice() || setting.connectionType == "BUILT_IN") {
+            val sunmiResult = printBitmapViaSunmiService(bitmap)
+            if (sunmiResult.success) {
+                return sunmiResult
+            }
+        }
+        val bytes = bitmapToEscPosBytes(bitmap)
+        return sendBytesToPrinterHardware(bytes, setting)
+    }
+
+    private suspend fun printBitmapViaSunmiService(bitmap: Bitmap): PrintResult {
+        val serviceIntents = listOf(
+            Intent().apply {
+                setPackage("woyou.aidlservice.jiuiv5")
+                action = "woyou.aidlservice.jiuiv5.IWoyouService"
+            },
+            Intent().apply {
+                setPackage("com.sunmi.peripheral.printer")
+                action = "com.sunmi.peripheral.printer.SunmiPrinterService"
+            },
+            Intent().apply {
+                setPackage("com.pos.printer.service")
+                action = "com.pos.printer.service.PrinterService"
+            }
+        )
+
+        for (intent in serviceIntents) {
+            val deferred = CompletableDeferred<PrintResult>()
+            val conn = object : ServiceConnection {
+                override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+                    if (service == null) {
+                        deferred.complete(PrintResult(false, "Printer service binder is null"))
+                        return
+                    }
+                    try {
+                        val descriptor = service.interfaceDescriptor ?: ""
+                        val stubClass = try {
+                            Class.forName("${descriptor}\$Stub")
+                        } catch (e: ClassNotFoundException) {
+                            try {
+                                Class.forName("woyou.aidlservice.jiuiv5.IWoyouService\$Stub")
+                            } catch (_: Exception) {
+                                null
+                            }
+                        }
+
+                        if (stubClass != null) {
+                            val asInterface = stubClass.getMethod("asInterface", IBinder::class.java)
+                            val proxy = asInterface.invoke(null, service)
+                            if (proxy != null) {
+                                val methods = proxy.javaClass.methods
+                                val printBitmapMethod = methods.firstOrNull { 
+                                    it.name.equals("printBitmap", ignoreCase = true) || it.name.equals("printBitmapCustom", ignoreCase = true)
+                                }
+                                val lineWrapMethod = methods.firstOrNull { it.name.equals("lineWrap", ignoreCase = true) }
+
+                                if (printBitmapMethod != null) {
+                                    val params = printBitmapMethod.parameterTypes
+                                    if (params.size == 2 && params[0] == Bitmap::class.java) {
+                                        val cbClass = params[1]
+                                        val dummyCb = try {
+                                            java.lang.reflect.Proxy.newProxyInstance(
+                                                cbClass.classLoader,
+                                                arrayOf(cbClass)
+                                            ) { _, _, _ -> null }
+                                        } catch (_: Exception) { null }
+                                        printBitmapMethod.invoke(proxy, bitmap, dummyCb)
+                                    } else if (params.size == 1 && params[0] == Bitmap::class.java) {
+                                        printBitmapMethod.invoke(proxy, bitmap)
+                                    } else if (params.size == 3 && params[0] == Bitmap::class.java) {
+                                        val cbClass = params[2]
+                                        val dummyCb = try {
+                                            java.lang.reflect.Proxy.newProxyInstance(
+                                                cbClass.classLoader,
+                                                arrayOf(cbClass)
+                                            ) { _, _, _ -> null }
+                                        } catch (_: Exception) { null }
+                                        printBitmapMethod.invoke(proxy, bitmap, 0, dummyCb)
+                                    }
+
+                                    // Feed paper
+                                    try {
+                                        if (lineWrapMethod != null) {
+                                            val lParams = lineWrapMethod.parameterTypes
+                                            if (lParams.size == 2 && lParams[0] == Int::class.javaPrimitiveType) {
+                                                val cbClass = lParams[1]
+                                                val dummyCb = try {
+                                                    java.lang.reflect.Proxy.newProxyInstance(
+                                                        cbClass.classLoader,
+                                                        arrayOf(cbClass)
+                                                    ) { _, _, _ -> null }
+                                                } catch (_: Exception) { null }
+                                                lineWrapMethod.invoke(proxy, 4, dummyCb)
+                                            }
+                                        }
+                                    } catch (_: Exception) {}
+
+                                    deferred.complete(PrintResult(true, "Printed successfully via Sunmi Native Bitmap Service"))
+                                    return
+                                }
+                            }
+                        }
+                        deferred.complete(PrintResult(false, "Sunmi printBitmap method not found"))
+                    } catch (e: Throwable) {
+                        Log.e("PrinterRepository", "Error in Sunmi AIDL invocation", e)
+                        deferred.complete(PrintResult(false, "Sunmi service error: ${e.message}"))
+                    }
+                }
+
+                override fun onServiceDisconnected(name: ComponentName?) {}
+            }
+
+            try {
+                val bound = context.bindService(intent, conn, Context.BIND_AUTO_CREATE)
+                if (bound) {
+                    val result = withTimeoutOrNull(3000) { deferred.await() }
+                    try { context.unbindService(conn) } catch (_: Exception) {}
+                    if (result != null && result.success) return result
+                }
+            } catch (e: Exception) {
+                Log.w("PrinterRepository", "Cannot bind to Sunmi service ${intent.`package`}", e)
+                try { context.unbindService(conn) } catch (_: Exception) {}
+            }
+        }
+
+        return PrintResult(false, "Sunmi printer service could not be connected")
     }
 
     private suspend fun sendBytesToPrinterHardware(bytes: ByteArray, setting: PrinterSettingEntity): PrintResult {
@@ -568,41 +670,6 @@ class PrinterRepository(
     }
 
     private suspend fun printToBuiltInPrinter(bytes: ByteArray): PrintResult {
-        try {
-            val innerPrinterClass = try {
-                Class.forName("com.sunmi.peripheral.printer.InnerPrinter")
-            } catch (e: ClassNotFoundException) {
-                null
-            }
-            if (innerPrinterClass != null) {
-                val getInstanceMethod = innerPrinterClass.getMethod("getInstance")
-                val printerInstance = getInstanceMethod.invoke(null)
-                if (printerInstance != null) {
-                    val cbClass = try {
-                        Class.forName("com.sunmi.peripheral.printer.InnerResultCallback")
-                    } catch (_: Exception) { null }
-                    val sendRawMethod = if (cbClass != null) {
-                        try { printerInstance.javaClass.getMethod("sendRAWData", ByteArray::class.java, cbClass) } catch (_: Exception) { null }
-                    } else null
-                    if (sendRawMethod != null && cbClass != null) {
-                        val dummyCallback = java.lang.reflect.Proxy.newProxyInstance(
-                            cbClass.classLoader,
-                            arrayOf(cbClass)
-                        ) { _, _, _ -> null }
-                        sendRawMethod.invoke(printerInstance, bytes, dummyCallback)
-                        return PrintResult(true, "Printed successfully via SUNMI InnerPrinter SDK")
-                    }
-                }
-            }
-        } catch (e: Throwable) {
-            Log.w("PrinterRepository", "Sunmi InnerPrinter SDK reflection call not available", e)
-        }
-
-        val aidlResult = printViaSystemPrinterService(bytes)
-        if (aidlResult.success) {
-            return aidlResult
-        }
-
         val devNodes = listOf(
             "/dev/ttyHSL1",
             "/dev/ttyMT0",
@@ -621,7 +688,7 @@ class PrinterRepository(
                         fos.write(bytes)
                         fos.flush()
                     }
-                    return PrintResult(true, "Printed successfully to POS thermal hardware port ($nodePath)")
+                    return PrintResult(true, "Printed successfully to POS hardware port ($nodePath)")
                 } catch (e: Exception) {
                     Log.w("PrinterRepository", "Failed writing to POS device node $nodePath", e)
                 }
@@ -642,114 +709,7 @@ class PrinterRepository(
             } catch (_: Exception) {}
         }
 
-        return PrintResult(false, "Built-in thermal printer not detected or service unavailable on this device.")
-    }
-
-    private suspend fun printViaSystemPrinterService(bytes: ByteArray): PrintResult {
-        val serviceIntents = listOf(
-            Intent().apply {
-                setPackage("woyou.aidlservice.jiuiv5")
-                action = "woyou.aidlservice.jiuiv5.IWoyouService"
-            },
-            Intent().apply {
-                setPackage("com.sunmi.peripheral.printer")
-                action = "com.sunmi.peripheral.printer.SunmiPrinterService"
-            },
-            Intent().apply {
-                setPackage("com.pos.printer.service")
-                action = "com.pos.printer.service.PrinterService"
-            },
-            Intent().apply {
-                setPackage("com.iposprinter.iposprinterservice")
-                action = "com.iposprinter.iposprinterservice.IPosPrinterService"
-            }
-        )
-        for (intent in serviceIntents) {
-            val deferred = CompletableDeferred<PrintResult>()
-            val conn = object : ServiceConnection {
-                override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-                    if (service == null) {
-                        deferred.complete(PrintResult(false, "Printer service binder is null"))
-                        return
-                    }
-                    try {
-                        val descriptor = service.interfaceDescriptor ?: ""
-                        var executed = false
-                        val stubClass = try {
-                            Class.forName("${descriptor}\$Stub")
-                        } catch (e: ClassNotFoundException) {
-                            try {
-                                Class.forName("woyou.aidlservice.jiuiv5.IWoyouService\$Stub")
-                            } catch (_: ClassNotFoundException) {
-                                try {
-                                    Class.forName("com.sunmi.peripheral.printer.SunmiPrinterService\$Stub")
-                                } catch (_: ClassNotFoundException) {
-                                    null
-                                }
-                            }
-                        }
-                        if (stubClass != null) {
-                            val asInterface = stubClass.getMethod("asInterface", IBinder::class.java)
-                            val proxy = asInterface.invoke(null, service)
-                            if (proxy != null) {
-                                val methods = proxy.javaClass.methods
-                                val sendRaw = methods.firstOrNull { it.name.equals("sendRAWData", ignoreCase = true) }
-                                if (sendRaw != null) {
-                                    val paramTypes = sendRaw.parameterTypes
-                                    if (paramTypes.size == 1 && paramTypes[0] == ByteArray::class.java) {
-                                        sendRaw.invoke(proxy, bytes)
-                                        executed = true
-                                    } else if (paramTypes.size == 2 && paramTypes[0] == ByteArray::class.java) {
-                                        val cbClass = paramTypes[1]
-                                        val dummyCb = try {
-                                            java.lang.reflect.Proxy.newProxyInstance(
-                                                cbClass.classLoader,
-                                                arrayOf(cbClass)
-                                            ) { _, _, _ -> null }
-                                        } catch (_: Exception) { null }
-                                        try {
-                                            if (dummyCb != null) {
-                                                sendRaw.invoke(proxy, bytes, dummyCb)
-                                            } else {
-                                                sendRaw.invoke(proxy, bytes, null)
-                                            }
-                                            executed = true
-                                        } catch (e: Exception) {
-                                            try {
-                                                sendRaw.invoke(proxy, bytes, null)
-                                                executed = true
-                                            } catch (_: Exception) {}
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        if (executed) {
-                            deferred.complete(PrintResult(true, "Printed successfully via ${name?.packageName ?: "Built-in POS Service"}"))
-                        } else {
-                            deferred.complete(PrintResult(false, "Built-in printer service rejected raw data command"))
-                        }
-                    } catch (e: Throwable) {
-                        Log.e("PrinterRepository", "Error printing via service ${name?.packageName}", e)
-                        deferred.complete(PrintResult(false, "Printer service error: ${e.message}"))
-                    }
-                }
-
-                override fun onServiceDisconnected(name: ComponentName?) {}
-            }
-            try {
-                val bound = context.bindService(intent, conn, Context.BIND_AUTO_CREATE)
-                if (bound) {
-                    val result = withTimeoutOrNull(2500) { deferred.await() }
-                    try { context.unbindService(conn) } catch (_: Exception) {}
-                    if (result != null && result.success) return result
-                }
-            } catch (e: Exception) {
-                Log.w("PrinterRepository", "Cannot bind to service ${intent.`package`}", e)
-                try { context.unbindService(conn) } catch (_: Exception) {}
-            }
-        }
-        return PrintResult(false, "Could not bind to built-in printer service")
+        return PrintResult(false, "Built-in printer unavailable on this device.")
     }
 
     private fun printToBluetoothPrinter(bytes: ByteArray, macAddress: String): PrintResult {
