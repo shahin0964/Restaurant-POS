@@ -57,7 +57,7 @@ interface OrderDao {
     @Query("SELECT COUNT(*) FROM orders")
     fun getOrderCount(): Flow<Int>
 
-    @Query("SELECT SUM(total) FROM orders")
+    @Query("SELECT SUM(total) FROM orders WHERE isPaid = 1 AND status != 'Cancelled'")
     fun getTotalSales(): Flow<Double?>
 
     @Query("DELETE FROM orders WHERE id = :id")

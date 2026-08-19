@@ -153,8 +153,9 @@ fun NewOrderScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f, fill = false)) {
                         Text(stringResource(R.string.lbl_total_amount), color = TextSecondary, fontSize = 11.sp)
+                        val formattedTotal = if (total % 1.0 == 0.0) String.format(Locale.US, "%.0f", total) else String.format(Locale.US, "%.2f", total)
                         Text(
-                            text = "৳ ${String.format(Locale.getDefault(), "%.0f", total)}",
+                            text = "৳ $formattedTotal",
                             color = CurrencyGold,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
@@ -651,7 +652,7 @@ fun ProductGridCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "৳ ${String.format(Locale.getDefault(), "%.0f", item.price)}",
+                            text = "৳ ${formatAmount(item.price)}",
                             color = CurrencyGold,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
@@ -897,7 +898,7 @@ fun ExpandedCartRow(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "৳ ${String.format(Locale.getDefault(), "%.0f", cartItem.menuItem.price * cartItem.quantity)}",
+                    text = "৳ ${formatAmount(cartItem.menuItem.price * cartItem.quantity)}",
                     color = CurrencyGold,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
@@ -964,5 +965,13 @@ fun ExpandedCartRow(
                 )
             }
         }
+    }
+}
+
+private fun formatAmount(amount: Double): String {
+    return if (amount % 1.0 == 0.0) {
+        String.format(Locale.US, "%.0f", amount)
+    } else {
+        String.format(Locale.US, "%.2f", amount)
     }
 }

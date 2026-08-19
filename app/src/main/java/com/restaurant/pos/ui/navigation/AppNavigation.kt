@@ -306,6 +306,22 @@ fun AppNavigation(
             BusinessSettingsScreen(
                 viewModel = viewModel,
                 onNavigate = { route ->
+                    if (route == Routes.DISCOUNT_OFFERS || route == "discount_offers") {
+                        navController.navigate(Routes.DISCOUNT_OFFERS)
+                    } else {
+                        handleBottomNav(navController, route)
+                    }
+                },
+                onBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(Routes.DISCOUNT_OFFERS) {
+            DiscountOffersScreen(
+                viewModel = viewModel,
+                onNavigate = { route ->
                     handleBottomNav(navController, route)
                 },
                 onBack = {

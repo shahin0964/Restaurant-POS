@@ -237,9 +237,15 @@ fun DashboardScreen(
                             modifier = Modifier.weight(1f)
                         )
                         // Total Sales
+                        val salesVal = totalSales ?: 0.0
+                        val formattedSales = if (salesVal % 1.0 == 0.0) {
+                            String.format(java.util.Locale.US, "%,.0f", salesVal)
+                        } else {
+                            String.format(java.util.Locale.US, "%,.2f", salesVal)
+                        }
                         StatCard(
                             iconText = "৳",
-                            valueText = "৳ ${String.format(java.util.Locale.getDefault(), "%,.0f", totalSales ?: 0.0)}",
+                            valueText = "৳ $formattedSales",
                             label = stringResource(R.string.dashboard_total_sales),
                             valueColor = CurrencyGold,
                             modifier = Modifier.weight(1f)
@@ -554,8 +560,9 @@ fun RecentOrderCard(
 
             Column(horizontalAlignment = Alignment.End) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    val orderTotalFormatted = if (order.total % 1.0 == 0.0) String.format(Locale.US, "%.0f", order.total) else String.format(Locale.US, "%.2f", order.total)
                     Text(
-                        text = "৳ ${String.format(Locale.US, "%.0f", order.total)}",
+                        text = "৳ $orderTotalFormatted",
                         color = CurrencyGold,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold

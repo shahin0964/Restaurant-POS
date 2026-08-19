@@ -124,7 +124,7 @@ fun AddItemCartScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "৳ ${String.format(Locale.getDefault(), "%.0f", cartTotal)}",
+                                    text = "৳ ${formatAmount(cartTotal)}",
                                     color = CurrencyGold,
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold
@@ -149,7 +149,8 @@ fun AddItemCartScreen(
                                         modifier = Modifier.weight(1f, fill = false)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("৳ ${String.format(Locale.getDefault(), "%.0f", ci.menuItem.price * ci.quantity)}", color = CurrencyGold, fontSize = 12.sp)
+                                    val itemSubtotal = ci.menuItem.price * ci.quantity
+                                    Text("৳ ${formatAmount(itemSubtotal)}", color = CurrencyGold, fontSize = 12.sp)
                                 }
                             }
 
@@ -246,7 +247,7 @@ fun AddItemCartScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "৳ ${String.format(Locale.getDefault(), "%.0f", selectedDish.price)}",
+                        text = "৳ ${formatAmount(selectedDish.price)}",
                         color = CurrencyGold,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold
@@ -332,5 +333,13 @@ fun AddItemCartScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
+    }
+}
+
+private fun formatAmount(amount: Double): String {
+    return if (amount % 1.0 == 0.0) {
+        String.format(Locale.US, "%.0f", amount)
+    } else {
+        String.format(Locale.US, "%.2f", amount)
     }
 }

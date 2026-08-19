@@ -270,8 +270,9 @@ fun OrderRowCard(
             ) {
                 Column {
                     Text(stringResource(R.string.lbl_total_amount), color = TextMuted, fontSize = 10.sp)
+                    val totalFormatted = if (order.total % 1.0 == 0.0) String.format(Locale.US, "%.0f", order.total) else String.format(Locale.US, "%.2f", order.total)
                     Text(
-                        text = "৳ ${String.format(Locale.getDefault(), "%.0f", order.total)}",
+                        text = "৳ $totalFormatted",
                         color = CurrencyGold,
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold

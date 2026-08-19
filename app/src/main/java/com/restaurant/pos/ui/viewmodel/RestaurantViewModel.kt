@@ -243,6 +243,39 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
         initialValue = emptyList()
     )
 
+    val allOffers: StateFlow<List<OfferEntity>> = database.offerDao().getAllOffers().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    fun saveOffer(offer: OfferEntity, onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            if (offer.id == 0L) {
+                database.offerDao().insertOffer(offer)
+            } else {
+                database.offerDao().updateOffer(offer)
+            }
+            forceCloudSync()
+            onComplete()
+        }
+    }
+
+    fun toggleOfferStatus(offer: OfferEntity) {
+        viewModelScope.launch {
+            database.offerDao().updateOffer(offer.copy(isActive = !offer.isActive))
+            forceCloudSync()
+        }
+    }
+
+    fun deleteOffer(offer: OfferEntity, onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            database.offerDao().deleteOffer(offer)
+            forceCloudSync()
+            onComplete()
+        }
+    }
+
     fun addExpense(title: String, amount: Double, category: String, note: String = "", paymentMethod: String = "Cash", expenseType: String = "OPERATING") {
         viewModelScope.launch {
             restaurantRepo.addExpense(title, amount, category, note, paymentMethod, expenseType)
@@ -549,7 +582,7 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
     private val _orderNote = MutableStateFlow("")
     val orderNote: StateFlow<String> = _orderNote.asStateFlow()
 
-    private val _discount = MutableStateFlow(40.0)
+    private val _discount = MutableStateFlow(0.0)
     val discount: StateFlow<Double> = _discount.asStateFlow()
 
     val tax: StateFlow<Double> = combine(_cartItems, _discount, receiptSetting) { cart, disc, setting ->
@@ -624,6 +657,7 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
 
     fun clearCart() {
         _cartItems.value = emptyList()
+        _discount.value = 0.0
     }
 
     fun calculateSubtotal(): Double {

@@ -559,8 +559,9 @@ fun ItemCardRow(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
+                val priceDisplay = if (item.price % 1.0 == 0.0) String.format(Locale.US, "%.0f", item.price) else String.format(Locale.US, "%.2f", item.price)
                 Text(
-                    text = "৳ ${String.format(Locale.US, "%.0f", item.price)}",
+                    text = "৳ $priceDisplay",
                     color = CurrencyGold,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
@@ -613,8 +614,8 @@ fun AddEditItemDialog(
 ) {
     var name by remember { mutableStateOf(item?.name ?: "") }
     var category by remember { mutableStateOf(item?.categoryName ?: if (categoriesList.isNotEmpty()) categoriesList.first() else "") }
-    var priceStr by remember { mutableStateOf(item?.price?.let { String.format(Locale.US, "%.0f", it) } ?: "") }
-    var costPriceStr by remember { mutableStateOf(item?.costPrice?.let { if (it > 0) String.format(Locale.US, "%.0f", it) else "" } ?: "") }
+    var priceStr by remember { mutableStateOf(item?.price?.let { if (it % 1.0 == 0.0) String.format(Locale.US, "%.0f", it) else String.format(Locale.US, "%.2f", it) } ?: "") }
+    var costPriceStr by remember { mutableStateOf(item?.costPrice?.let { if (it > 0) (if (it % 1.0 == 0.0) String.format(Locale.US, "%.0f", it) else String.format(Locale.US, "%.2f", it)) else "" } ?: "") }
     var description by remember { mutableStateOf(item?.description ?: "") }
     var imageUrl by remember { mutableStateOf(item?.imageUrl ?: "") }
     var isAvailable by remember { mutableStateOf(item?.isAvailable ?: true) }

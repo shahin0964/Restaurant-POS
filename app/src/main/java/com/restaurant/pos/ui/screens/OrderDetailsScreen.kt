@@ -253,7 +253,7 @@ fun OrderDetailsScreen(
                                         fontWeight = FontWeight.Medium
                                     )
                                     Text(
-                                        text = "৳ ${String.format(Locale.getDefault(), "%.0f", item.pricePerUnit)} / unit",
+                                        text = "৳ ${formatAmount(item.pricePerUnit)} / unit",
                                         color = TextMuted,
                                         fontSize = 11.sp
                                     )
@@ -265,8 +265,9 @@ fun OrderDetailsScreen(
                                         )
                                     }
                                 }
+                                val itemLineTotal = item.pricePerUnit * item.quantity
                                 Text(
-                                    text = "৳ ${String.format(Locale.getDefault(), "%.0f", item.pricePerUnit * item.quantity)}",
+                                    text = "৳ ${formatAmount(itemLineTotal)}",
                                     color = CurrencyGold,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
@@ -289,11 +290,11 @@ fun OrderDetailsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    SummaryRow(stringResource(R.string.lbl_subtotal), "৳ ${String.format(Locale.getDefault(), "%.0f", order.subtotal)}")
+                    SummaryRow(stringResource(R.string.lbl_subtotal), "৳ ${formatAmount(order.subtotal)}")
                     Spacer(modifier = Modifier.height(6.dp))
-                    SummaryRow(stringResource(R.string.lbl_discount), "৳ ${String.format(Locale.getDefault(), "%.0f", order.discount)}")
+                    SummaryRow(stringResource(R.string.lbl_discount), "৳ ${formatAmount(order.discount)}")
                     Spacer(modifier = Modifier.height(6.dp))
-                    SummaryRow(stringResource(R.string.lbl_vat), "৳ ${String.format(Locale.getDefault(), "%.0f", order.tax)}")
+                    SummaryRow(stringResource(R.string.lbl_vat), "৳ ${formatAmount(order.tax)}")
                     HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = BorderOutline)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -301,7 +302,7 @@ fun OrderDetailsScreen(
                     ) {
                         Text(stringResource(R.string.lbl_total), color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         Text(
-                            text = "৳ ${String.format(Locale.getDefault(), "%.0f", order.total)}",
+                            text = "৳ ${formatAmount(order.total)}",
                             color = CurrencyGold,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
@@ -384,5 +385,13 @@ fun OrderDetailsScreen(
             Spacer(modifier = Modifier.height(16.dp))
         }
         }
+    }
+}
+
+private fun formatAmount(amount: Double): String {
+    return if (amount % 1.0 == 0.0) {
+        String.format(Locale.US, "%.0f", amount)
+    } else {
+        String.format(Locale.US, "%.2f", amount)
     }
 }

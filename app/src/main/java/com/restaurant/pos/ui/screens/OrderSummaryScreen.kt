@@ -181,8 +181,9 @@ fun OrderSummaryScreen(
                                 fontSize = 12.sp,
                                 modifier = Modifier.padding(horizontal = 8.dp)
                             )
+                            val itemTotal = cartItem.menuItem.price * cartItem.quantity
                             Text(
-                                text = "৳ ${String.format(Locale.getDefault(), "%.0f", cartItem.menuItem.price * cartItem.quantity)}",
+                                text = "৳ ${formatAmount(itemTotal)}",
                                 color = CurrencyGold,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
@@ -205,11 +206,11 @@ fun OrderSummaryScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    SummaryRow(stringResource(R.string.lbl_subtotal), "৳ ${String.format(Locale.getDefault(), "%.0f", subtotal)}")
+                    SummaryRow(stringResource(R.string.lbl_subtotal), "৳ ${formatAmount(subtotal)}")
                     Spacer(modifier = Modifier.height(8.dp))
-                    SummaryRow(stringResource(R.string.lbl_discount), "৳ ${String.format(Locale.getDefault(), "%.0f", discount)}")
+                    SummaryRow(stringResource(R.string.lbl_discount), "৳ ${formatAmount(discount)}")
                     Spacer(modifier = Modifier.height(8.dp))
-                    SummaryRow(stringResource(R.string.lbl_vat), "৳ ${String.format(Locale.getDefault(), "%.0f", tax)}")
+                    SummaryRow(stringResource(R.string.lbl_vat), "৳ ${formatAmount(tax)}")
                     HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp), color = BorderOutline)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -218,7 +219,7 @@ fun OrderSummaryScreen(
                     ) {
                         Text(stringResource(R.string.lbl_total), color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         Text(
-                            text = "৳ ${String.format(Locale.getDefault(), "%.0f", total)}",
+                            text = "৳ ${formatAmount(total)}",
                             color = CurrencyGold,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
@@ -294,5 +295,13 @@ fun SummaryRow(label: String, value: String) {
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
         )
+    }
+}
+
+private fun formatAmount(amount: Double): String {
+    return if (amount % 1.0 == 0.0) {
+        String.format(Locale.US, "%.0f", amount)
+    } else {
+        String.format(Locale.US, "%.2f", amount)
     }
 }
