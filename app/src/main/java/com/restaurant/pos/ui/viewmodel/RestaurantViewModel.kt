@@ -514,11 +514,10 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
 
     fun getActiveOrderForTable(table: TableEntity, ordersList: List<OrderWithItems>): OrderWithItems? {
         val tableNameClean = table.name.trim().lowercase()
-        return ordersList.firstOrNull { orderWithItems ->
+        val latestTableOrder = ordersList.firstOrNull { orderWithItems ->
             val o = orderWithItems.order
             val isDineIn = o.orderType.lowercase().contains("dine")
-            val isActive = !o.status.equals("Completed", ignoreCase = true) && !o.status.equals("Cancelled", ignoreCase = true)
-            if (!isDineIn || !isActive) return@firstOrNull false
+            if (!isDineIn) return@firstOrNull false
 
             val orderTableClean = o.tableNumber.trim().lowercase()
             val matchesId = o.tableId != null && o.tableId == table.id
@@ -530,6 +529,18 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
 
             matchesId || matchesName
         }
+
+        if (latestTableOrder != null) {
+            val o = latestTableOrder.order
+            val isCompleted = o.status.equals("Completed", ignoreCase = true) || o.status.equals("Paid", ignoreCase = true) || o.isPaid
+            val isCancelled = o.status.equals("Cancelled", ignoreCase = true)
+            val isActive = !isCompleted && !isCancelled
+
+            if (isActive) {
+                return latestTableOrder
+            }
+        }
+        return null
     }
 
     fun addTable(name: String, capacity: Int, onSuccess: () -> Unit, onError: (String) -> Unit) {
