@@ -303,18 +303,6 @@ fun AppNavigation(
             )
         }
 
-        composable(Routes.BACKUP_RESTORE) {
-            BackupRestoreScreen(
-                viewModel = viewModel,
-                onNavigate = { route ->
-                    handleBottomNav(navController, route)
-                },
-                onBack = {
-                    navController.popBackStack()
-                }
-            )
-        }
-
         composable(Routes.BUSINESS_SETTINGS) {
             BusinessSettingsScreen(
                 viewModel = viewModel,
@@ -438,6 +426,14 @@ fun AppNavigation(
         composable(Routes.APP_UPDATE) {
             AppUpdateScreen(
                 viewModel = viewModel,
+                onBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(Routes.BACKUP_RESTORE) {
+            BackupRestoreScreenV2(
                 onBack = {
                     navController.popBackStack()
                 }

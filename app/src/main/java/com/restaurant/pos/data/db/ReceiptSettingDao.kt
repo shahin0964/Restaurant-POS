@@ -16,4 +16,7 @@ interface ReceiptSettingDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveReceiptSetting(setting: ReceiptSettingEntity)
+
+    @Query("DELETE FROM receipt_settings")
+    suspend fun clearReceiptSettings()
 }

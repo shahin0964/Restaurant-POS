@@ -9,10 +9,13 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface StaffFoodDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertStaffFood(entry: StaffFoodEntity)
+    suspend fun insertStaffFood(entry: StaffFoodEntity): Long
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertStaffFoodList(entries: List<StaffFoodEntity>)
+
+    @Query("SELECT * FROM staff_food WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): StaffFoodEntity?
 
     @Query("SELECT * FROM staff_food ORDER BY id ASC")
     suspend fun getAllStaffFoodSync(): List<StaffFoodEntity>

@@ -1,9 +1,13 @@
 package com.restaurant.pos.data.db
 
 import androidx.room.*
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface SyncRecordDao {
+    @Query("SELECT COUNT(*) FROM sync_records WHERE pendingSync = 1")
+    fun getPendingCountFlow(): Flow<Int>
+
     @Query("SELECT * FROM sync_records WHERE tableName = :tableName AND localId = :localId LIMIT 1")
     suspend fun getRecordByLocalId(tableName: String, localId: Long): SyncRecordEntity?
 

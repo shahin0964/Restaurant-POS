@@ -16,4 +16,7 @@ interface PrinterSettingDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun savePrinterSetting(setting: PrinterSettingEntity)
+
+    @Query("DELETE FROM printer_settings")
+    suspend fun clearPrinterSettings()
 }

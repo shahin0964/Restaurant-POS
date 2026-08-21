@@ -315,7 +315,7 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         private fun createSyncTriggers(db: SupportSQLiteDatabase) {
-            val tables = listOf("users", "categories", "menu_items", "orders", "order_items", "tables", "expenses", "stock_logs", "offers", "receipt_settings", "printer_settings", "notifications")
+            val tables = listOf("users", "categories", "menu_items", "orders", "order_items", "tables", "expenses", "stock_logs", "offers", "receipt_settings", "printer_settings", "notifications", "staff_food")
             for (table in tables) {
                 try {
                     db.execSQL("""

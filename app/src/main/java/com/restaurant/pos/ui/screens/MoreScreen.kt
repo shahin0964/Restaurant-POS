@@ -60,8 +60,6 @@ fun MoreScreen(
     var showProfileDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
-    var showResetConfirmDialog by remember { mutableStateOf(false) }
-    var resetResultMessage by remember { mutableStateOf<String?>(null) }
     val currentLang by if (viewModel != null) viewModel.appLanguage.collectAsState() else remember { mutableStateOf("en") }
     val currentTheme by if (viewModel != null) viewModel.appTheme.collectAsState() else remember { mutableStateOf("system") }
     val currentUser by if (viewModel != null) viewModel.currentUser.collectAsState(initial = null) else remember { mutableStateOf(null) }
@@ -1143,59 +1141,7 @@ fun MoreScreen(
                     )
                 }
 
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = DarkSurface),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showResetConfirmDialog = true }
-                        .testTag("more_item_reset_app_data")
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(StatusCancelled.copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "🔴",
-                                    fontSize = 20.sp
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column {
-                                Text(
-                                    text = "Reset App Data",
-                                    color = StatusCancelled,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "Permanently reset all items, categories, orders & app records",
-                                    color = TextSecondary,
-                                    fontSize = 12.sp
-                                )
-                            }
-                        }
-                        Icon(
-                            imageVector = Icons.Default.ChevronRight,
-                            contentDescription = "Open",
-                            tint = StatusCancelled,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
+
             }
 
         }
@@ -1592,103 +1538,5 @@ fun MoreScreen(
         )
     }
 
-    if (showResetConfirmDialog) {
-        AlertDialog(
-            onDismissRequest = { showResetConfirmDialog = false },
-            icon = {
-                Text("⚠️", fontSize = 40.sp)
-            },
-            title = {
-                Text(
-                    text = "Reset All App Data?",
-                    color = StatusCancelled,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    textAlign = TextAlign.Center
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth().testTag("reset_confirm_dialog_content"),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "This will permanently delete all application data including items, categories, customers, orders, billing, and stock records.",
-                        color = TextPrimary,
-                        fontSize = 14.sp,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "This action cannot be undone. Admin login account will remain intact.",
-                        color = TextSecondary,
-                        fontSize = 13.sp,
-                        textAlign = TextAlign.Center
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showResetConfirmDialog = false
-                        viewModel?.resetAllAppDataAdmin { success, message ->
-                            resetResultMessage = message
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = StatusCancelled),
-                    modifier = Modifier.testTag("confirm_reset_app_data_btn")
-                ) {
-                    Text("YES, RESET ALL DATA", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showResetConfirmDialog = false },
-                    colors = ButtonDefaults.textButtonColors(contentColor = Color.White),
-                    modifier = Modifier.testTag("cancel_reset_app_data_btn")
-                ) {
-                    Text("CANCEL", fontWeight = FontWeight.Bold)
-                }
-            },
-            containerColor = DarkSurface,
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.testTag("reset_confirm_dialog")
-        )
-    }
 
-    if (resetResultMessage != null) {
-        AlertDialog(
-            onDismissRequest = { resetResultMessage = null },
-            icon = {
-                Text("ℹ️", fontSize = 36.sp)
-            },
-            title = { Text(
-                    text = "App Data Reset",
-                    color = TextPrimary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    textAlign = TextAlign.Center
-                )
-            },
-            text = {
-                Text(
-                    text = resetResultMessage ?: "",
-                    color = TextPrimary,
-                    fontSize = 14.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = { resetResultMessage = null },
-                    colors = ButtonDefaults.buttonColors(containerColor = CurrencyGold)
-                ) {
-                    Text("OK", color = DarkBackground, fontWeight = FontWeight.Bold)
-                }
-            },
-            containerColor = DarkSurface,
-            shape = RoundedCornerShape(16.dp)
-        )
-    }
 }

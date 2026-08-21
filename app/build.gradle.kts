@@ -112,9 +112,9 @@ dependencies {
   implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
   // implementation(libs.firebase.ai)
-  // Uncomment to use Firestore:
-  implementation(libs.firebase.firestore)
+  // implementation(libs.firebase.firestore)
   implementation(libs.firebase.storage)
+  implementation(libs.firebase.database)
 
   // Uncomment ALL FOUR of the following dependencies together to use Firebase Auth and Google
   // Sign-In via Credential Manager:
@@ -122,6 +122,7 @@ dependencies {
   implementation(libs.androidx.credentials)
   implementation(libs.androidx.credentials.play.services)
   implementation(libs.googleid)
+  implementation(libs.play.services.auth)
   implementation(libs.androidx.work.runtime.ktx)
   // implementation(libs.firebase.appcheck.recaptcha)
   implementation(libs.kotlinx.coroutines.android)
@@ -137,6 +138,9 @@ dependencies {
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
   testImplementation(libs.robolectric)
+  testImplementation("org.mockito:mockito-core:5.11.0")
+  testImplementation("org.mockito:mockito-inline:5.2.0")
+  testImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
   testImplementation(libs.roborazzi)
   testImplementation(libs.roborazzi.compose)
   testImplementation(libs.roborazzi.junit.rule)
