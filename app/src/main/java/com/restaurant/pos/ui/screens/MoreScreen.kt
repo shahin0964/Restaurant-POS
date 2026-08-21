@@ -17,6 +17,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -38,6 +40,7 @@ import androidx.compose.foundation.verticalScroll
 fun MoreScreen(
     viewModel: RestaurantViewModel? = null,
     onNavigate: (String) -> Unit,
+    onOpenProfile: () -> Unit = {},
     onOpenNotifications: () -> Unit = {},
     onOpenTablesManagement: () -> Unit = {},
     onOpenBusinessSettings: () -> Unit = {},
@@ -60,6 +63,7 @@ fun MoreScreen(
     var showProfileDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
+    var showResetConfirmation by remember { mutableStateOf(false) }
     val currentLang by if (viewModel != null) viewModel.appLanguage.collectAsState() else remember { mutableStateOf("en") }
     val currentTheme by if (viewModel != null) viewModel.appTheme.collectAsState() else remember { mutableStateOf("system") }
     val currentUser by if (viewModel != null) viewModel.currentUser.collectAsState(initial = null) else remember { mutableStateOf(null) }
@@ -123,7 +127,7 @@ fun MoreScreen(
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { showProfileDialog = true }
+                    .clickable { onOpenProfile() }
                     .testTag("more_item_profile")
             ) {
                 Row(
@@ -1141,11 +1145,110 @@ fun MoreScreen(
                     )
                 }
 
+                Spacer(modifier = Modifier.height(8.dp))
 
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showResetConfirmation = true }
+                        .testTag("more_item_app_data_reset")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(StatusCancelled.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("🧹", fontSize = 20.sp)
+                            }
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column {
+                                Text(
+                                    text = "App Data Reset",
+                                    color = TextPrimary,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Permanently reset all local application data",
+                                    color = TextSecondary,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = "Open",
+                            tint = TextMuted,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
             }
 
         }
         }
+    }
+
+    val context = LocalContext.current
+
+    if (showResetConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirmation = false },
+            title = {
+                Text(
+                    text = "Reset App Data?",
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Text(
+                    text = "This will permanently reset the app data. This action cannot be undone.",
+                    color = TextSecondary,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showResetConfirmation = false
+                        viewModel?.resetAppData {
+                            Toast.makeText(context, "App data reset successfully", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = StatusCancelled),
+                    modifier = Modifier.testTag("reset_app_data_confirm_btn")
+                ) {
+                    Text("Confirm", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showResetConfirmation = false },
+                    modifier = Modifier.testTag("reset_app_data_cancel_btn")
+                ) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            },
+            containerColor = DarkSurface,
+            shape = RoundedCornerShape(16.dp)
+        )
     }
 
     if (showDeliveryDialog) {

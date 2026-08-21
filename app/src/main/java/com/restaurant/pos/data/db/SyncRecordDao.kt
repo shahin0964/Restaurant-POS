@@ -8,6 +8,9 @@ interface SyncRecordDao {
     @Query("SELECT COUNT(*) FROM sync_records WHERE pendingSync = 1")
     fun getPendingCountFlow(): Flow<Int>
 
+    @Query("SELECT MAX(lastSyncTime) FROM sync_records WHERE lastSyncTime > 0")
+    fun getLastSyncTimeFlow(): Flow<Long?>
+
     @Query("SELECT * FROM sync_records WHERE tableName = :tableName AND localId = :localId LIMIT 1")
     suspend fun getRecordByLocalId(tableName: String, localId: Long): SyncRecordEntity?
 

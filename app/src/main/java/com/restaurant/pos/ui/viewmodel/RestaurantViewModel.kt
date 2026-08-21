@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import com.restaurant.pos.data.db.*
 import com.restaurant.pos.data.network.NetworkConnectivityObserver
 import com.restaurant.pos.data.storage.ProductImageStorageManager
@@ -96,6 +97,33 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = 0
     )
+
+    private val connectivityObserver = NetworkConnectivityObserver(application)
+    val isOnline: StateFlow<Boolean> = connectivityObserver.isOnline.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = false
+    )
+
+    val pendingSyncCount: StateFlow<Int> = database.syncRecordDao().getPendingCountFlow().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = 0
+    )
+
+    val lastSyncTime: StateFlow<Long?> = database.syncRecordDao().getLastSyncTimeFlow().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
+
+    fun updatePassword(oldPass: String, newPass: String, onResult: (Result<Boolean>) -> Unit) {
+        viewModelScope.launch {
+            val userId = currentUser.value?.id ?: 0L
+            val result = authRepo.updatePassword(userId, oldPass, newPass)
+            onResult(result)
+        }
+    }
 
     fun markNotificationAsRead(id: Long) {
         viewModelScope.launch {
@@ -1014,6 +1042,33 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             val info = updateRepo.checkForUpdates(com.restaurant.pos.BuildConfig.VERSION_NAME)
             _updateInfo.value = info
+        }
+    }
+
+    fun resetAppData(onComplete: () -> Unit) {
+        viewModelScope.launch {
+            val currentSessionUser = currentUser.value
+            database.withTransaction {
+                database.orderDao().clearAllOrderItems()
+                database.orderDao().clearAllOrders()
+                database.stockLogDao().clearAllStockLogs()
+                database.menuItemDao().clearAll()
+                database.categoryDao().clearAll()
+                database.tableDao().clearAllTables()
+                database.userDao().clearAllUsers()
+                database.expenseDao().clearAllExpenses()
+                database.offerDao().clearAllOffers()
+                database.notificationDao().clearAllNotifications()
+                database.staffFoodDao().clearAllStaffFood()
+                database.syncRecordDao().clearAll()
+                database.printerSettingDao().clearPrinterSettings()
+                database.receiptSettingDao().clearReceiptSettings()
+                
+                if (currentSessionUser != null) {
+                    database.userDao().insertUser(currentSessionUser)
+                }
+            }
+            onComplete()
         }
     }
 

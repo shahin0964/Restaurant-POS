@@ -24,6 +24,11 @@ class Step4OfflineSyncQueueTest {
             return flowOf(records.count { it.pendingSync })
         }
 
+        override fun getLastSyncTimeFlow(): Flow<Long?> {
+            val maxVal = records.filter { it.lastSyncTime > 0 }.maxOfOrNull { it.lastSyncTime }
+            return flowOf(maxVal)
+        }
+
         override suspend fun getRecordByLocalId(tableName: String, localId: Long): SyncRecordEntity? {
             return records.find { it.tableName == tableName && it.localId == localId }
         }

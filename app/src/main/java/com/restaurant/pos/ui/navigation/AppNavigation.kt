@@ -33,6 +33,7 @@ object Routes {
     const val ORDER_DETAILS = "order_details"
     const val REPORTS = "reports"
     const val MORE = "more"
+    const val PROFILE = "profile"
     const val NOTIFICATIONS = "notifications"
     const val PRODUCTS_MENU = "products_menu"
     const val ORDER_HISTORY = "order_history"
@@ -233,6 +234,9 @@ fun AppNavigation(
                 viewModel = viewModel,
                 onNavigate = { route ->
                     handleBottomNav(navController, route)
+                },
+                onOpenProfile = {
+                    navController.navigate(Routes.PROFILE)
                 },
                 onOpenNotifications = {
                     navController.navigate(Routes.NOTIFICATIONS)
@@ -436,6 +440,21 @@ fun AppNavigation(
             BackupRestoreScreenV2(
                 onBack = {
                     navController.popBackStack()
+                }
+            )
+        }
+
+        composable(Routes.PROFILE) {
+            ProfileScreen(
+                viewModel = viewModel,
+                onBack = {
+                    navController.popBackStack()
+                },
+                onLogout = {
+                    viewModel.logout()
+                    navController.navigate(Routes.LOGIN) {
+                        popUpTo(0) { inclusive = true }
+                    }
                 }
             )
         }
