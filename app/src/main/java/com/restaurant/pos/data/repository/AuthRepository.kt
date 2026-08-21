@@ -13,6 +13,7 @@ import com.restaurant.pos.data.db.UserDao
 import com.restaurant.pos.data.db.UserEntity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeoutOrNull
 
 class AuthRepository(
     private val context: Context,
@@ -52,9 +53,11 @@ class AuthRepository(
             return localUser.copy(isCurrentSession = true)
         }
 
-        // If local user is missing but Firebase session is valid, fetch profile from Firestore
+        // If local user is missing but Firebase session is valid, fetch profile from Firestore with timeout
         return try {
-            val firestoreUserDoc = firestore.collection("users").document(fbUser.uid).get().await()
+            val firestoreUserDoc = withTimeoutOrNull(3000L) {
+                firestore.collection("users").document(fbUser.uid).get().await()
+            }
             val remoteRole = firestoreUserDoc?.getString("role") ?: "Administrator"
             val remoteName = firestoreUserDoc?.getString("name") ?: (fbUser.displayName ?: "User")
             val remotePermissions = when (val p = firestoreUserDoc?.get("permissions")) {
@@ -115,9 +118,11 @@ class AuthRepository(
             val authResult = firebaseAuth.signInWithEmailAndPassword(trimmedEmail, password).await()
             val firebaseUser = authResult.user ?: throw Exception("Authentication failed, user is null")
 
-            // Fetch user record from Firestore if it exists
+            // Fetch user record from Firestore if it exists (with timeout protection)
             val firestoreUserDoc = try {
-                firestore.collection("users").document(firebaseUser.uid).get().await()
+                withTimeoutOrNull(3000L) {
+                    firestore.collection("users").document(firebaseUser.uid).get().await()
+                }
             } catch (e: Exception) {
                 null
             }
@@ -189,7 +194,7 @@ class AuthRepository(
                 userDao.updateUser(localUser)
             }
 
-            // Sync user profile to Firestore
+            // Sync user profile to Firestore (with safe timeout so it never blocks login)
             try {
                 val userDocMap = mapOf(
                     "id" to localUser.id,
@@ -202,9 +207,11 @@ class AuthRepository(
                     "isCurrentSession" to false,
                     "_lastUpdated" to System.currentTimeMillis()
                 )
-                firestore.collection("users").document(firebaseUser.uid)
-                    .set(userDocMap, SetOptions.merge())
-                    .await()
+                withTimeoutOrNull(3000L) {
+                    firestore.collection("users").document(firebaseUser.uid)
+                        .set(userDocMap, SetOptions.merge())
+                        .await()
+                }
             } catch (e: Exception) {
                 Log.e("AuthRepository", "Failed to sync user document to Firestore on login", e)
             }
@@ -228,9 +235,11 @@ class AuthRepository(
             val email = firebaseUser.email ?: throw Exception("Google account must have an email")
             val displayName = firebaseUser.displayName ?: "Google User"
 
-            // Check Firestore doc
+            // Check Firestore doc (with timeout protection)
             val firestoreUserDoc = try {
-                firestore.collection("users").document(firebaseUser.uid).get().await()
+                withTimeoutOrNull(3000L) {
+                    firestore.collection("users").document(firebaseUser.uid).get().await()
+                }
             } catch (e: Exception) {
                 null
             }
@@ -281,7 +290,7 @@ class AuthRepository(
                 userDao.updateUser(localUser)
             }
 
-            // Sync user profile to Firestore
+            // Sync user profile to Firestore (with safe timeout so it never blocks login)
             try {
                 val userDocMap = mapOf(
                     "id" to localUser.id,
@@ -293,9 +302,11 @@ class AuthRepository(
                     "isCurrentSession" to false,
                     "_lastUpdated" to System.currentTimeMillis()
                 )
-                firestore.collection("users").document(firebaseUser.uid)
-                    .set(userDocMap, SetOptions.merge())
-                    .await()
+                withTimeoutOrNull(3000L) {
+                    firestore.collection("users").document(firebaseUser.uid)
+                        .set(userDocMap, SetOptions.merge())
+                        .await()
+                }
             } catch (e: Exception) {
                 Log.e("AuthRepository", "Failed to sync Google user document to Firestore", e)
             }

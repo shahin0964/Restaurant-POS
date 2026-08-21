@@ -13,7 +13,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.TimeoutCancellationException
 
 class CloudSyncManager(
     context: Context,
@@ -118,17 +121,17 @@ class CloudSyncManager(
         if (!isAuthenticated()) return Result.failure(Exception("Unauthenticated: Please login to Firebase to backup."))
 
         return try {
-            if (!syncMutex.tryLock()) {
-                return Result.failure(Exception("A sync operation is already running. Please try again shortly."))
+            withTimeout(20000L) {
+                syncMutex.withLock {
+                    Log.d("CloudSyncManager", "Starting manual cloud backup...")
+                    ensureAllEntitiesTracked()
+                    pushLocalChangesToFirestore()
+                    Result.success("Cloud Backup completed successfully.")
+                }
             }
-            try {
-                Log.d("CloudSyncManager", "Starting manual cloud backup...")
-                ensureAllEntitiesTracked()
-                pushLocalChangesToFirestore()
-                Result.success("Cloud Backup completed successfully.")
-            } finally {
-                syncMutex.unlock()
-            }
+        } catch (e: TimeoutCancellationException) {
+            Log.e("CloudSyncManager", "Manual backup timed out waiting for active sync")
+            Result.failure(Exception("Backup operation timed out waiting for active sync. Please try again."))
         } catch (e: Exception) {
             Log.e("CloudSyncManager", "Manual backup failed: ${e.message}")
             Result.failure(e)
@@ -140,18 +143,18 @@ class CloudSyncManager(
         if (!isAuthenticated()) return Result.failure(Exception("Unauthenticated: Please login to Firebase to restore."))
 
         return try {
-            if (!syncMutex.tryLock()) {
-                return Result.failure(Exception("A sync operation is already running. Please try again shortly."))
+            withTimeout(25000L) {
+                syncMutex.withLock {
+                    Log.d("CloudSyncManager", "Starting manual cloud restore...")
+                    // Clear cursors to force a full incremental pull
+                    clearAllSyncCursors()
+                    pullRemoteChangesFromFirestore()
+                    Result.success("Cloud Restore completed successfully.")
+                }
             }
-            try {
-                Log.d("CloudSyncManager", "Starting manual cloud restore...")
-                // Clear cursors to force a full incremental pull
-                clearAllSyncCursors()
-                pullRemoteChangesFromFirestore()
-                Result.success("Cloud Restore completed successfully.")
-            } finally {
-                syncMutex.unlock()
-            }
+        } catch (e: TimeoutCancellationException) {
+            Log.e("CloudSyncManager", "Manual restore timed out waiting for active sync")
+            Result.failure(Exception("Restore operation timed out waiting for active sync. Please try again."))
         } catch (e: Exception) {
             Log.e("CloudSyncManager", "Manual restore failed: ${e.message}")
             Result.failure(e)

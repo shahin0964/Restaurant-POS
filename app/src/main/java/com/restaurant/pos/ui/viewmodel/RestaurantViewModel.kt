@@ -552,7 +552,8 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val allTables: StateFlow<List<TableEntity>> = currentUser.flatMapLatest { user ->
         if (user != null) {
-            restaurantRepo.getAllTables(user.id.toString())
+            val accountId = user.firebaseUid ?: user.id.toString()
+            restaurantRepo.getAllTables(accountId)
         } else {
             kotlinx.coroutines.flow.flowOf(emptyList())
         }
@@ -607,7 +608,7 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
         }
         viewModelScope.launch {
             try {
-                val accountId = currentUser.value?.id?.toString() ?: ""
+                val accountId = currentUser.value?.let { it.firebaseUid ?: it.id.toString() } ?: ""
                 restaurantRepo.addTable(name.trim(), capacity, accountId)
                 forceCloudSync()
                 onSuccess()
@@ -822,7 +823,7 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
             }
             val hasRemovedSampleTables = sharedPrefs.getBoolean("has_removed_sample_tables_v1", false)
             if (!hasRemovedSampleTables) {
-                val accountId = currentUser.value?.id?.toString() ?: ""
+                val accountId = currentUser.value?.let { it.firebaseUid ?: it.id.toString() } ?: ""
                 restaurantRepo.removeSampleTables(accountId)
                 sharedPrefs.edit().putBoolean("has_removed_sample_tables_v1", true).apply()
             }
