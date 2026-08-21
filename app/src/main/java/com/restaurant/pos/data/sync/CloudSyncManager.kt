@@ -204,6 +204,9 @@ class CloudSyncManager(
         val pendingRecords = syncDao.getPendingSyncRecords()
         if (pendingRecords.isEmpty()) return
 
+        var pushErrorCount = 0
+        var lastPushException: Exception? = null
+
         for (record in pendingRecords) {
             try {
                 val collectionRef = firestore.collection(record.tableName)
@@ -247,8 +250,14 @@ class CloudSyncManager(
                     }
                 }
             } catch (e: Exception) {
+                pushErrorCount++
+                lastPushException = e
                 Log.e("CloudSyncManager", "Failed to push record ${record.id} for table ${record.tableName}: ${e.message}", e)
             }
+        }
+
+        if (pushErrorCount > 0 && lastPushException != null) {
+            throw lastPushException
         }
     }
 

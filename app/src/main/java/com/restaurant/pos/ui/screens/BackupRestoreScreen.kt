@@ -5,7 +5,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,15 +13,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Restore
-import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -56,24 +55,49 @@ fun BackupRestoreScreen(
     val cloudState by viewModel.cloudOperationState.collectAsState()
     val pendingRestoreData by viewModel.pendingRestoreData.collectAsState()
     val recentBackups by viewModel.recentBackups.collectAsState()
-    val autoBackupEnabled by viewModel.autoBackupEnabled.collectAsState()
-    val autoBackupFrequency by viewModel.autoBackupFrequency.collectAsState()
-    val lastAutoBackupTime by viewModel.lastAutoBackupTime.collectAsState()
-    val lastAutoBackupStatus by viewModel.lastAutoBackupStatus.collectAsState()
-    val lastAutoBackupError by viewModel.lastAutoBackupError.collectAsState()
 
     var showCloudRestoreConfirm by remember { mutableStateOf(false) }
 
     val isAuthorized = currentUser == null || currentUser?.role in listOf("Administrator", "Manager")
     val isAuthenticated = currentUser != null
 
-    // Delete confirmation dialog state
     var backupToDelete by remember { mutableStateOf<BackupFileInfo?>(null) }
 
-    // Safe ActivityResultRegistryOwner check
+    val isCloudInProgress = cloudState is BackupOpState.Progress
+    val isLocalInProgress = backupState is BackupOpState.Progress
+
+    // Automatically handle cloud backup completion / error with toast feedback
+    LaunchedEffect(cloudState) {
+        when (val state = cloudState) {
+            is BackupOpState.Success -> {
+                Toast.makeText(context, "${state.title}: ${state.detail}", Toast.LENGTH_LONG).show()
+                viewModel.clearCloudOpState()
+            }
+            is BackupOpState.Error -> {
+                Toast.makeText(context, "Cloud Error: ${state.message}", Toast.LENGTH_LONG).show()
+                viewModel.clearCloudOpState()
+            }
+            else -> {}
+        }
+    }
+
+    // Automatically handle local backup success / error
+    LaunchedEffect(backupState) {
+        when (val state = backupState) {
+            is BackupOpState.Success -> {
+                Toast.makeText(context, "${state.title}", Toast.LENGTH_SHORT).show()
+                viewModel.clearBackupOpState()
+            }
+            is BackupOpState.Error -> {
+                Toast.makeText(context, "Error: ${state.message}", Toast.LENGTH_LONG).show()
+                viewModel.clearBackupOpState()
+            }
+            else -> {}
+        }
+    }
+
     val activityResultRegistryOwner = androidx.activity.compose.LocalActivityResultRegistryOwner.current
 
-    // File launcher for creating backup
     val createDocumentLauncher = if (activityResultRegistryOwner != null) {
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.CreateDocument("application/json")
@@ -82,11 +106,8 @@ fun BackupRestoreScreen(
                 viewModel.createBackupToUri(uri)
             }
         }
-    } else {
-        null
-    }
+    } else null
 
-    // File launcher for selecting restore file
     val openDocumentLauncher = if (activityResultRegistryOwner != null) {
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.OpenDocument()
@@ -95,9 +116,7 @@ fun BackupRestoreScreen(
                 viewModel.validateAndPrepareRestore(uri)
             }
         }
-    } else {
-        null
-    }
+    } else null
 
     Scaffold(
         topBar = {
@@ -106,26 +125,30 @@ fun BackupRestoreScreen(
                     .fillMaxWidth()
                     .background(DarkBackground)
                     .statusBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .padding(horizontal = 8.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                        onClick = { onBack() },
-                        modifier = Modifier.testTag("backup_restore_back_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = TextPrimary
-                        )
-                    }
+                IconButton(
+                    onClick = { onBack() },
+                    modifier = Modifier.testTag("backup_restore_back_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = TextPrimary
+                    )
+                }
+                Column(modifier = Modifier.padding(start = 4.dp)) {
                     Text(
                         text = "Backup & Restore",
                         color = TextPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Securely backup and restore your app data",
+                        color = TextSecondary,
+                        fontSize = 12.sp
                     )
                 }
             }
@@ -141,22 +164,26 @@ fun BackupRestoreScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Read-only notice if unauthorized
+            item {
+                Spacer(modifier = Modifier.height(2.dp))
+            }
+
+            // READ-ONLY WARNING (If unauthorized)
             if (!isAuthorized) {
                 item {
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = StatusCancelled.copy(alpha = 0.15f)),
+                        colors = CardDefaults.cardColors(containerColor = StatusCancelled.copy(alpha = 0.12f)),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(14.dp),
+                                .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Icon(Icons.Default.Lock, contentDescription = null, tint = StatusCancelled)
                             Column {
@@ -164,7 +191,7 @@ fun BackupRestoreScreen(
                                     text = "READ-ONLY ACCESS",
                                     color = StatusCancelled,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
+                                    fontSize = 12.sp
                                 )
                                 Text(
                                     text = "Only Administrators & Managers can create or restore backups.",
@@ -177,475 +204,367 @@ fun BackupRestoreScreen(
                 }
             }
 
-            // SECTION: CLOUD BACKUP & RESTORE
+            // CARD 1: AES-256 ENCRYPTED OFFLINE BACKUP
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = DarkSurface),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, BorderOutline),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(BrandPrimary.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(StatusReady.copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Backup,
-                                    contentDescription = null,
-                                    tint = StatusReady,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            Column {
-                                Text(
-                                    text = "CLOUD BACKUP & RESTORE",
-                        color = TextPrimary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp
-                                )
-                                Text(
-                                    text = "Securely sync your POS data to the cloud",
-                                    color = TextSecondary,
-                                    fontSize = 12.sp
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Default.Shield,
+                                contentDescription = null,
+                                tint = BrandPrimary,
+                                modifier = Modifier.size(26.dp)
+                            )
                         }
-
-                        if (!isAuthenticated) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Please login to enable Cloud Backup and Restore features.",
-                                color = StatusCancelled,
+                                text = "AES-256 Encrypted Offline Backup",
+                                color = TextPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "All data including customers, bills, payments, expenses & settings are password-protected and saved locally.",
+                                color = TextSecondary,
                                 fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
+                                lineHeight = 16.sp
                             )
-                        } else {
-                            Text(
-                                text = "Cloud Backup ensures all your local data is synchronized with Firestore. Cloud Restore pulls all your business data from the cloud to this device.",
-                                color = TextMuted,
-                                fontSize = 12.sp
-                            )
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                Button(
-                                    onClick = { viewModel.cloudBackup() },
-                                    enabled = isAuthorized,
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = StatusReady,
-                                        contentColor = Color.White
-                                    ),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.weight(1f).height(46.dp).testTag("cloud_backup_btn")
-                                ) {
-                                    Icon(Icons.Default.Backup, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("BACKUP", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                }
-
-                                OutlinedButton(
-                                    onClick = { showCloudRestoreConfirm = true },
-                                    enabled = isAuthorized,
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                                    border = BorderStroke(1.dp, if (isAuthorized) StatusReady else TextMuted),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.weight(1f).height(46.dp).testTag("cloud_restore_btn")
-                                ) {
-                                    Icon(Icons.Default.Restore, contentDescription = null, tint = StatusReady, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("RESTORE", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)
-                                }
-                            }
                         }
                     }
                 }
             }
 
-            // SECTION: AUTOMATIC BACKUP (BACKGROUND)
+            // GRID ROW: CREATE BACKUP & RESTORE BACKUP
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // CREATE BACKUP
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, BorderOutline),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("backup_create_btn")
+                            .clickable(enabled = !isLocalInProgress) {
+                                if (!isAuthorized) {
+                                    Toast.makeText(context, "Unauthorized: Only Managers & Admins can create backups", Toast.LENGTH_SHORT).show()
+                                    return@clickable
+                                }
+                                val timestampStr = SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.US).format(Date())
+                                val suggestedName = "RestaurantPOS_Backup_$timestampStr.json"
+                                createDocumentLauncher?.launch(suggestedName)
+                            }
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 20.dp, horizontal = 12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(BrandPrimary.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isLocalInProgress) {
+                                    CircularProgressIndicator(
+                                        color = BrandPrimary,
+                                        modifier = Modifier.size(22.dp),
+                                        strokeWidth = 2.5.dp
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Autorenew,
+                                        contentDescription = null,
+                                        tint = BrandPrimary,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Text(
+                                text = "Create Backup",
+                                color = TextPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = if (isLocalInProgress) "Encrypting..." else "Encrypt & export data",
+                                color = TextSecondary,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    // RESTORE BACKUP
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, BorderOutline),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("backup_restore_btn")
+                            .clickable(enabled = !isLocalInProgress) {
+                                if (!isAuthorized) {
+                                    Toast.makeText(context, "Unauthorized: Only Managers & Admins can restore backups", Toast.LENGTH_SHORT).show()
+                                    return@clickable
+                                }
+                                openDocumentLauncher?.launch(arrayOf("application/json", "*/*"))
+                            }
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 20.dp, horizontal = 12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(BrandAccent.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudDownload,
+                                    contentDescription = null,
+                                    tint = BrandAccent,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Text(
+                                text = "Restore Backup",
+                                color = TextPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Decrypt & load file",
+                                color = TextSecondary,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            // CARD 3: CLOUD AUTO-BACKUP
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = DarkSurface),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().testTag("auto_backup_card")
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, BorderOutline),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("auto_backup_card")
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                modifier = Modifier.weight(1f)
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(BrandPrimary.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .background(CurrencyGold.copy(alpha = 0.15f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
+                                if (isCloudInProgress) {
+                                    CircularProgressIndicator(
+                                        color = BrandPrimary,
+                                        modifier = Modifier.size(24.dp),
+                                        strokeWidth = 2.5.dp
+                                    )
+                                } else {
                                     Icon(
-                                        imageVector = Icons.Default.Schedule,
+                                        imageVector = Icons.Default.Cloud,
                                         contentDescription = null,
-                                        tint = CurrencyGold,
-                                        modifier = Modifier.size(20.dp)
+                                        tint = BrandPrimary,
+                                        modifier = Modifier.size(26.dp)
                                     )
                                 }
-                                Column {
-                                    Text(
-                                        text = "AUTO BACKUP",
-                                        color = TextPrimary,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Cloud Auto-Backup",
+                                    color = TextPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (isCloudInProgress) {
+                                        (cloudState as? BackupOpState.Progress)?.message ?: "Syncing with cloud..."
+                                    } else {
+                                        "Backup and restore your data securely with your account"
+                                    },
+                                    color = if (isCloudInProgress) BrandPrimary else TextSecondary,
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp
+                                )
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    if (!isAuthorized) {
+                                        Toast.makeText(context, "Unauthorized action", Toast.LENGTH_SHORT).show()
+                                        return@Button
+                                    }
+                                    if (!isAuthenticated) {
+                                        Toast.makeText(context, "Please login to perform cloud backup", Toast.LENGTH_SHORT).show()
+                                        return@Button
+                                    }
+                                    viewModel.cloudBackup()
+                                },
+                                enabled = isAuthorized && !isCloudInProgress,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = BrandPrimary,
+                                    contentColor = Color.White,
+                                    disabledContainerColor = BrandPrimary.copy(alpha = 0.5f),
+                                    disabledContentColor = Color.White.copy(alpha = 0.7f)
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(46.dp)
+                                    .testTag("cloud_backup_btn")
+                            ) {
+                                if (isCloudInProgress) {
+                                    CircularProgressIndicator(
+                                        color = Color.White,
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp
                                     )
+                                    Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "Automatic scheduled background backup",
-                                        color = TextSecondary,
+                                        text = "Syncing...",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.CloudUpload,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Backup to Cloud",
+                                        fontWeight = FontWeight.Bold,
                                         fontSize = 12.sp
                                     )
                                 }
                             }
 
-                            Switch(
-                                checked = autoBackupEnabled,
-                                onCheckedChange = { enabled ->
-                                    if (isAuthorized) {
-                                        viewModel.setAutoBackupEnabled(enabled)
-                                    } else {
-                                        Toast.makeText(context, "Unauthorized: Only Managers & Admins can change settings", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                enabled = isAuthorized,
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color.Black,
-                                    checkedTrackColor = CurrencyGold,
-                                    uncheckedThumbColor = TextMuted,
-                                    uncheckedTrackColor = DarkSurfaceVariant
-                                ),
-                                modifier = Modifier.testTag("auto_backup_switch")
-                            )
-                        }
-
-                        if (autoBackupEnabled) {
-                            HorizontalDivider(color = DarkSurfaceVariant)
-
-                            // Frequency Selector
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(
-                                    text = "Backup Frequency",
-                                    color = TextSecondary,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    listOf("Daily", "Weekly").forEach { freq ->
-                                        val isSelected = autoBackupFrequency == freq
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(if (isSelected) CurrencyGold else DarkSurfaceVariant)
-                                                .clickable(enabled = isAuthorized) {
-                                                    viewModel.setAutoBackupFrequency(freq)
-                                                }
-                                                .padding(vertical = 10.dp)
-                                                .testTag("auto_backup_freq_$freq"),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = if (freq == "Daily") "Daily (24h)" else "Weekly (7d)",
-                                                color = if (isSelected) Color.Black else TextSecondary,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                fontSize = 13.sp
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Status Info Box
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(DarkBackground)
-                                    .padding(12.dp)
-                            ) {
-                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(8.dp)
-                                                .clip(CircleShape)
-                                                .background(
-                                                    if (lastAutoBackupStatus == "SUCCESS") StatusReady
-                                                    else if (lastAutoBackupStatus == "FAILED") StatusCancelled
-                                                    else CurrencyGold
-                                                )
-                                        )
-                                        Text(
-                                            text = if (lastAutoBackupTime > 0) {
-                                                val sdf = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.US)
-                                                "Last Backup: ${sdf.format(Date(lastAutoBackupTime))}"
-                                            } else {
-                                                "Status: Scheduled (Waiting for trigger)"
-                                            },
-                                            color = TextPrimary,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                    }
-
-                                    if (lastAutoBackupError != null) {
-                                        Text(
-                                            text = "Error: $lastAutoBackupError",
-                                            color = StatusCancelled,
-                                            fontSize = 11.sp
-                                        )
-                                    }
-
-                                    Text(
-                                        text = "Saved in app-private storage. Keeps the latest 7 automatic backups.",
-                                        color = TextMuted,
-                                        fontSize = 11.sp
-                                    )
-                                }
-                            }
-
-                            // Quick Run Button
                             OutlinedButton(
                                 onClick = {
-                                    if (isAuthorized) {
-                                        viewModel.runAutoBackupNow()
+                                    if (!isAuthorized) {
+                                        Toast.makeText(context, "Unauthorized action", Toast.LENGTH_SHORT).show()
+                                        return@OutlinedButton
                                     }
+                                    if (!isAuthenticated) {
+                                        Toast.makeText(context, "Please login to perform cloud restore", Toast.LENGTH_SHORT).show()
+                                        return@OutlinedButton
+                                    }
+                                    showCloudRestoreConfirm = true
                                 },
-                                enabled = isAuthorized,
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = CurrencyGold),
-                                border = BorderStroke(1.dp, CurrencyGold.copy(alpha = 0.6f)),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.fillMaxWidth().height(42.dp).testTag("run_auto_backup_now_btn")
+                                enabled = isAuthorized && !isCloudInProgress,
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = BrandPrimary
+                                ),
+                                border = BorderStroke(1.dp, BrandPrimary),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(46.dp)
+                                    .testTag("cloud_restore_btn")
                             ) {
-                                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = CurrencyGold, modifier = Modifier.size(16.dp))
+                                Icon(
+                                    imageVector = Icons.Default.CloudDownload,
+                                    contentDescription = null,
+                                    tint = BrandPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("RUN AUTO BACKUP NOW", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = CurrencyGold)
-                            }
-                        } else {
-                            Text(
-                                text = "Enable Auto Backup to automatically create daily or weekly snapshots of orders, inventory, expenses, and settings without manual exports.",
-                                color = TextMuted,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                }
-            }
-
-            // SECTION 1: CREATE BACKUP
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = DarkSurface),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(CurrencyGold.copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Backup,
-                                    contentDescription = null,
-                                    tint = CurrencyGold,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            Column {
                                 Text(
-                                    text = "CREATE BACKUP",
-                        color = TextPrimary,
+                                    text = "Restore from Cloud",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp
-                                )
-                                Text(
-                                    text = "Export all real POS data to a structured, versioned file",
-                                    color = TextSecondary,
-                                    fontSize = 12.sp
+                                    fontSize = 12.sp,
+                                    color = BrandPrimary
                                 )
                             }
-                        }
-
-                        Text(
-                            text = "Backs up orders, menu items, inventory, expenses, categories, offers, business & receipt settings, and printer configuration.",
-                            color = TextMuted,
-                            fontSize = 12.sp
-                        )
-
-                        Button(
-                            onClick = {
-                                if (!isAuthorized) {
-                                    Toast.makeText(context, "Unauthorized: Only Managers & Admins can create backups", Toast.LENGTH_SHORT).show()
-                                    return@Button
-                                }
-                                val timestampStr = SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.US).format(Date())
-                                val suggestedName = "RestaurantPOS_Backup_$timestampStr.json"
-                                createDocumentLauncher?.launch(suggestedName)
-                            },
-                            enabled = isAuthorized,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = CurrencyGold,
-                                contentColor = Color.Black,
-                                disabledContainerColor = DarkSurfaceVariant,
-                                disabledContentColor = TextMuted
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(46.dp)
-                                .testTag("backup_create_btn")
-                        ) {
-                            Icon(Icons.Default.Backup, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("CREATE BACKUP", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     }
                 }
             }
 
-            // SECTION 2: RESTORE BACKUP
+            // SECTION HEADER: LOCAL BACKUP HISTORY
             item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = DarkSurface),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(StatusPreparing.copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Restore,
-                                    contentDescription = null,
-                                    tint = StatusPreparing,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            Column {
-                                Text(
-                                    text = "RESTORE BACKUP",
-                        color = TextPrimary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp
-                                )
-                                Text(
-                                    text = "Restore application data from a valid backup file",
-                                    color = TextSecondary,
-                                    fontSize = 12.sp
-                                )
-                            }
-                        }
-
-                        Text(
-                            text = "Select a valid Restaurant POS backup JSON file from storage. The file will be thoroughly validated before restoring.",
-                            color = TextMuted,
-                            fontSize = 12.sp
-                        )
-
-                        OutlinedButton(
-                            onClick = {
-                                if (!isAuthorized) {
-                                    Toast.makeText(context, "Unauthorized: Only Managers & Admins can restore backups", Toast.LENGTH_SHORT).show()
-                                    return@OutlinedButton
-                                }
-                                openDocumentLauncher?.launch(arrayOf("application/json", "*/*"))
-                            },
-                            enabled = isAuthorized,
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                            border = BorderStroke(1.dp, if (isAuthorized) StatusPreparing else TextMuted),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(46.dp)
-                                .testTag("backup_restore_btn")
-                        ) {
-                            Icon(Icons.Default.Restore, contentDescription = null, tint = StatusPreparing, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("RESTORE BACKUP", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
-                        }
-                    }
-                }
-            }
-
-            // SECTION 3: BACKUP HISTORY / RECENT BACKUPS
-            item {
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "BACKUP HISTORY",
-                    color = CurrencyGold,
+                    text = "Local Backup History",
+                    color = TextPrimary,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(top = 8.dp)
+                    fontSize = 16.sp
                 )
             }
 
+            // LOCAL BACKUP HISTORY LIST / EMPTY STATE
             if (recentBackups.isEmpty()) {
                 item {
                     Card(
                         colors = CardDefaults.cardColors(containerColor = DarkSurface),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, BorderOutline),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(24.dp),
+                                .padding(vertical = 40.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Default.Storage, contentDescription = null, tint = TextMuted, modifier = Modifier.size(32.dp))
-                                Text("No recent backups recorded", color = TextMuted, fontSize = 13.sp)
-                            }
+                            Text(
+                                text = "No local backups created yet",
+                                color = TextSecondary,
+                                fontSize = 13.sp
+                            )
                         }
                     }
                 }
@@ -653,7 +572,8 @@ fun BackupRestoreScreen(
                 items(recentBackups, key = { it.uriString }) { info ->
                     Card(
                         colors = CardDefaults.cardColors(containerColor = DarkSurface),
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, BorderOutline),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -668,11 +588,16 @@ fun BackupRestoreScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Icon(Icons.Default.Storage, contentDescription = null, tint = CurrencyGold, modifier = Modifier.size(22.dp))
+                                Icon(
+                                    imageVector = Icons.Default.Storage,
+                                    contentDescription = null,
+                                    tint = BrandPrimary,
+                                    modifier = Modifier.size(22.dp)
+                                )
                                 Column {
                                     Text(
                                         text = info.fileName,
-                                        color = Color.White,
+                                        color = TextPrimary,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp
                                     )
@@ -683,7 +608,7 @@ fun BackupRestoreScreen(
                                     )
                                     Text(
                                         text = info.recordSummary,
-                                        color = TextMuted,
+                                        color = TextSecondary.copy(alpha = 0.7f),
                                         fontSize = 10.sp
                                     )
                                 }
@@ -711,90 +636,7 @@ fun BackupRestoreScreen(
         }
     }
 
-    // CLOUD OPERATION PROGRESS DIALOG
-    when (val state = cloudState) {
-        is BackupOpState.Progress -> {
-            AlertDialog(
-                onDismissRequest = {},
-                confirmButton = {},
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        CircularProgressIndicator(
-                            color = StatusReady,
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 2.5.dp
-                        )
-                        Text("Cloud Sync", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    }
-                },
-                text = {
-                    Text(state.message, color = TextSecondary, fontSize = 13.sp)
-                },
-                containerColor = DarkSurface
-            )
-        }
-
-        is BackupOpState.Success -> {
-            AlertDialog(
-                onDismissRequest = { viewModel.clearCloudOpState() },
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = StatusReady)
-                        Text(state.title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    }
-                },
-                text = {
-                    Text(state.detail, color = TextSecondary, fontSize = 13.sp)
-                },
-                confirmButton = {
-                    Button(
-                        onClick = { viewModel.clearCloudOpState() },
-                        colors = ButtonDefaults.buttonColors(containerColor = StatusReady, contentColor = Color.White)
-                    ) {
-                        Text("OK", fontWeight = FontWeight.Bold)
-                    }
-                },
-                containerColor = DarkSurface
-            )
-        }
-
-        is BackupOpState.Error -> {
-            AlertDialog(
-                onDismissRequest = { viewModel.clearCloudOpState() },
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(Icons.Default.Error, contentDescription = null, tint = StatusCancelled)
-                        Text("Cloud Error", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    }
-                },
-                text = {
-                    Text(state.message, color = TextSecondary, fontSize = 13.sp)
-                },
-                confirmButton = {
-                    Button(
-                        onClick = { viewModel.clearCloudOpState() },
-                        colors = ButtonDefaults.buttonColors(containerColor = StatusCancelled)
-                    ) {
-                        Text("CLOSE", color = TextPrimary, fontWeight = FontWeight.Bold)
-                    }
-                },
-                containerColor = DarkSurface
-            )
-        }
-
-        BackupOpState.Idle -> {}
-    }
-
-    // CLOUD RESTORE CONFIRMATION
+    // CLOUD RESTORE CONFIRMATION DIALOG
     if (showCloudRestoreConfirm) {
         AlertDialog(
             onDismissRequest = { showCloudRestoreConfirm = false },
@@ -814,7 +656,7 @@ fun BackupRestoreScreen(
                         showCloudRestoreConfirm = false
                         viewModel.cloudRestore()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = StatusReady, contentColor = Color.White)
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPrimary, contentColor = Color.White)
                 ) {
                     Text("START RESTORE", fontWeight = FontWeight.Bold)
                 }
@@ -828,90 +670,7 @@ fun BackupRestoreScreen(
         )
     }
 
-    // PROGRESS DIALOG
-    when (val state = backupState) {
-        is BackupOpState.Progress -> {
-            AlertDialog(
-                onDismissRequest = {},
-                confirmButton = {},
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        CircularProgressIndicator(
-                            color = CurrencyGold,
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 2.5.dp
-                        )
-                        Text("Please Wait", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    }
-                },
-                text = {
-                    Text(state.message, color = TextSecondary, fontSize = 13.sp)
-                },
-                containerColor = DarkSurface
-            )
-        }
-
-        is BackupOpState.Success -> {
-            AlertDialog(
-                onDismissRequest = { viewModel.clearBackupOpState() },
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = StatusReady)
-                        Text(state.title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    }
-                },
-                text = {
-                    Text(state.detail, color = TextSecondary, fontSize = 13.sp)
-                },
-                confirmButton = {
-                    Button(
-                        onClick = { viewModel.clearBackupOpState() },
-                        colors = ButtonDefaults.buttonColors(containerColor = CurrencyGold, contentColor = Color.Black)
-                    ) {
-                        Text("OK", fontWeight = FontWeight.Bold)
-                    }
-                },
-                containerColor = DarkSurface
-            )
-        }
-
-        is BackupOpState.Error -> {
-            AlertDialog(
-                onDismissRequest = { viewModel.clearBackupOpState() },
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(Icons.Default.Error, contentDescription = null, tint = StatusCancelled)
-                        Text("Error", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    }
-                },
-                text = {
-                    Text(state.message, color = TextSecondary, fontSize = 13.sp)
-                },
-                confirmButton = {
-                    Button(
-                        onClick = { viewModel.clearBackupOpState() },
-                        colors = ButtonDefaults.buttonColors(containerColor = StatusCancelled)
-                    ) {
-                        Text("CLOSE", color = TextPrimary, fontWeight = FontWeight.Bold)
-                    }
-                },
-                containerColor = DarkSurface
-            )
-        }
-
-        BackupOpState.Idle -> {}
-    }
-
-    // RESTORE WARNING DIALOG (Requirement 9 & 10)
+    // RESTORE WARNING DIALOG
     pendingRestoreData?.let { data ->
         AlertDialog(
             onDismissRequest = { viewModel.cancelPendingRestore() },
@@ -920,7 +679,9 @@ fun BackupRestoreScreen(
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Restoring will replace or update existing application data.", color = TextPrimary,
+                    Text(
+                        "Restoring will replace or update existing application data.",
+                        color = TextPrimary,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp
                     )
@@ -954,7 +715,7 @@ fun BackupRestoreScreen(
         )
     }
 
-    // DELETE BACKUP DIALOG (Requirement 20)
+    // DELETE BACKUP DIALOG
     backupToDelete?.let { info ->
         AlertDialog(
             onDismissRequest = { backupToDelete = null },
@@ -977,7 +738,7 @@ fun BackupRestoreScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = StatusCancelled)
                 ) {
-                    Text("DELETE", color = TextPrimary, fontWeight = FontWeight.Bold)
+                    Text("DELETE", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {

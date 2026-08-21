@@ -29,48 +29,57 @@ class AutoBackupWorker(
             val database = AppDatabase.getInstance(appContext)
             val backupManager = BackupManager(appContext, database)
 
-            // Local auto backup
-            val result = backupManager.createAutoBackup()
+            // 1. Local auto backup
+            val localResult = backupManager.createAutoBackup()
+            if (localResult is BackupResult.Error) {
+                prefs.edit()
+                    .putString("last_auto_backup_status", "FAILED")
+                    .putString("last_auto_backup_error", localResult.message)
+                    .apply()
 
-            // Also trigger Cloud Backup to Firestore if authenticated (Internet Billing Manager architecture)
+                return@withContext if (runAttemptCount < 3) Result.retry() else Result.failure()
+            }
+
+            val localSuccess = localResult as BackupResult.Success
+
+            // 2. Cloud Auto Backup (Firestore) - REQUIRED for overall Auto Backup success
             val auth = FirebaseAuth.getInstance()
-            if (auth.currentUser != null) {
-                try {
-                    val networkObserver = NetworkConnectivityObserver(appContext)
-                    val cloudSyncManager = CloudSyncManager(appContext, database, networkObserver)
-                    cloudSyncManager.performManualBackup()
-                    Log.d("AutoBackupWorker", "Cloud auto-sync completed successfully during periodic backup.")
-                } catch (e: Exception) {
-                    Log.w("AutoBackupWorker", "Cloud sync encountered error during auto-backup: ${e.message}")
-                }
+            if (auth.currentUser == null) {
+                val authErrorMsg = "Unauthenticated: User must be logged in to complete Cloud Auto Backup."
+                prefs.edit()
+                    .putString("last_auto_backup_status", "FAILED")
+                    .putString("last_auto_backup_error", authErrorMsg)
+                    .apply()
+
+                return@withContext if (runAttemptCount < 3) Result.retry() else Result.failure()
             }
 
-            when (result) {
-                is BackupResult.Success -> {
-                    // Update prefs only after SUCCESS
-                    prefs.edit()
-                        .putLong("last_auto_backup_time", result.fileInfo.timestamp)
-                        .putString("last_auto_backup_status", "SUCCESS")
-                        .putString("last_auto_backup_error", null)
-                        .putString("last_auto_backup_file", result.fileInfo.fileName)
-                        .putString("last_auto_backup_summary", result.fileInfo.recordSummary)
-                        .apply()
+            val networkObserver = NetworkConnectivityObserver(appContext)
+            val cloudSyncManager = CloudSyncManager(appContext, database, networkObserver)
+            val cloudResult = cloudSyncManager.performManualBackup()
 
-                    Result.success()
-                }
-                is BackupResult.Error -> {
-                    prefs.edit()
-                        .putString("last_auto_backup_status", "FAILED")
-                        .putString("last_auto_backup_error", result.message)
-                        .apply()
+            if (cloudResult.isFailure) {
+                val cloudErrorMsg = cloudResult.exceptionOrNull()?.message ?: "Cloud sync failed during auto-backup"
+                Log.w("AutoBackupWorker", "Cloud sync encountered error during auto-backup: $cloudErrorMsg")
+                prefs.edit()
+                    .putString("last_auto_backup_status", "FAILED")
+                    .putString("last_auto_backup_error", cloudErrorMsg)
+                    .apply()
 
-                    if (runAttemptCount < 3) {
-                        Result.retry()
-                    } else {
-                        Result.failure()
-                    }
-                }
+                return@withContext if (runAttemptCount < 3) Result.retry() else Result.failure()
             }
+
+            // Both Local Backup + Cloud Backup succeeded
+            prefs.edit()
+                .putLong("last_auto_backup_time", localSuccess.fileInfo.timestamp)
+                .putString("last_auto_backup_status", "SUCCESS")
+                .putString("last_auto_backup_error", null)
+                .putString("last_auto_backup_file", localSuccess.fileInfo.fileName)
+                .putString("last_auto_backup_summary", localSuccess.fileInfo.recordSummary)
+                .apply()
+
+            Log.d("AutoBackupWorker", "Auto backup (Local + Cloud Firestore) completed successfully.")
+            Result.success()
         } catch (e: Exception) {
             prefs.edit()
                 .putString("last_auto_backup_status", "FAILED")
