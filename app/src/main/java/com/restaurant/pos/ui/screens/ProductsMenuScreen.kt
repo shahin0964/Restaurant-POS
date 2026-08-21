@@ -323,26 +323,46 @@ fun ProductsMenuScreen(
 
     // Add / Edit Product Dialog
     if (showAddEditDialog) {
+        var isUploadingProductImage by remember { mutableStateOf(false) }
+        var productImageUploadError by remember { mutableStateOf<String?>(null) }
+
         AddEditItemDialog(
             item = itemToEdit,
             activeTab = activeTab,
             categoriesList = categories.map { it.name },
-            onDismiss = { showAddEditDialog = false },
-            onSave = { name, category, price, costPrice, description, imageUrl, isAvailable ->
-                viewModel.saveMenuItem(
+            isUploading = isUploadingProductImage,
+            uploadError = productImageUploadError,
+            onDismiss = {
+                if (!isUploadingProductImage) {
+                    showAddEditDialog = false
+                    productImageUploadError = null
+                }
+            },
+            onSave = { name, category, price, costPrice, description, newImageUri, existingImageUrl, isAvailable ->
+                productImageUploadError = null
+                viewModel.saveMenuItemWithImageUpload(
                     id = itemToEdit?.id ?: 0L,
                     name = name,
                     categoryName = category,
                     price = price,
                     costPrice = costPrice,
                     description = description,
-                    imageUrl = imageUrl,
-                    isAvailable = isAvailable
+                    selectedImageUri = newImageUri,
+                    existingImageUrl = existingImageUrl,
+                    isAvailable = isAvailable,
+                    onProgress = { uploading ->
+                        isUploadingProductImage = uploading
+                    },
+                    onSuccess = {
+                        isUploadingProductImage = false
+                        showAddEditDialog = false
+                        productImageUploadError = null
+                    },
+                    onError = { error ->
+                        isUploadingProductImage = false
+                        productImageUploadError = error
+                    }
                 )
-                showAddEditDialog = false
-            },
-            onPickImage = { uri ->
-                viewModel.saveImageToInternalStorage(uri)
             }
         )
     }
@@ -608,9 +628,10 @@ fun AddEditItemDialog(
     item: MenuItemEntity?,
     activeTab: String,
     categoriesList: List<String>,
+    isUploading: Boolean = false,
+    uploadError: String? = null,
     onDismiss: () -> Unit,
-    onSave: (name: String, category: String, price: Double, costPrice: Double, description: String, imageUrl: String, isAvailable: Boolean) -> Unit,
-    onPickImage: (Uri) -> String
+    onSave: (name: String, category: String, price: Double, costPrice: Double, description: String, selectedImageUri: Uri?, existingImageUrl: String, isAvailable: Boolean) -> Unit
 ) {
     var name by remember { mutableStateOf(item?.name ?: "") }
     var category by remember { mutableStateOf(item?.categoryName ?: if (categoriesList.isNotEmpty()) categoriesList.first() else "") }
@@ -618,6 +639,7 @@ fun AddEditItemDialog(
     var costPriceStr by remember { mutableStateOf(item?.costPrice?.let { if (it > 0) (if (it % 1.0 == 0.0) String.format(Locale.US, "%.0f", it) else String.format(Locale.US, "%.2f", it)) else "" } ?: "") }
     var description by remember { mutableStateOf(item?.description ?: "") }
     var imageUrl by remember { mutableStateOf(item?.imageUrl ?: "") }
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     var isAvailable by remember { mutableStateOf(item?.isAvailable ?: true) }
 
     val activityResultRegistryOwner = androidx.activity.compose.LocalActivityResultRegistryOwner.current
@@ -626,8 +648,7 @@ fun AddEditItemDialog(
             contract = ActivityResultContracts.PickVisualMedia()
         ) { uri: Uri? ->
             uri?.let {
-                val savedPath = onPickImage(it)
-                imageUrl = savedPath
+                selectedImageUri = it
             }
         }
     } else {
@@ -635,7 +656,9 @@ fun AddEditItemDialog(
     }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (!isUploading) onDismiss()
+        },
         title = {
             Text(
                 text = if (item == null) "Add ${if (activeTab == "PRODUCTS") "Product" else "Menu Item"}" else "Edit ${if (activeTab == "PRODUCTS") "Product" else "Menu Item"}",
@@ -652,6 +675,10 @@ fun AddEditItemDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 // Image Picker Preview
+                val imageModel: Any? = selectedImageUri ?: if (imageUrl.isNotBlank()) {
+                    if (imageUrl.startsWith("/")) File(imageUrl) else imageUrl
+                } else null
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -661,10 +688,10 @@ fun AddEditItemDialog(
                         .border(1.dp, BorderOutline, RoundedCornerShape(10.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (imageUrl.isNotBlank()) {
+                    if (imageModel != null) {
                         AsyncImage(
                             model = ImageRequest.Builder(LocalContext.current)
-                                .data(if (imageUrl.startsWith("/")) File(imageUrl) else imageUrl)
+                                .data(imageModel)
                                 .crossfade(true)
                                 .build(),
                             contentDescription = "Selected Image",
@@ -677,6 +704,29 @@ fun AddEditItemDialog(
                             Text("No Image Selected", color = TextMuted, fontSize = 11.sp)
                         }
                     }
+
+                    if (isUploading) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.65f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(color = CurrencyGold, modifier = Modifier.size(24.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Uploading image to Cloud...", color = Color.White, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+
+                if (uploadError != null) {
+                    Text(
+                        text = "Upload failed: $uploadError",
+                        color = StatusCancelled,
+                        fontSize = 11.sp
+                    )
                 }
 
                 Row(
@@ -690,21 +740,26 @@ fun AddEditItemDialog(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                             )
                         },
+                        enabled = !isUploading,
                         colors = ButtonDefaults.buttonColors(containerColor = CurrencyGold, contentColor = Color.Black),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = if (imageUrl.isBlank()) "ADD IMAGE" else "CHANGE IMAGE",
+                            text = if (imageModel == null) "ADD IMAGE" else "CHANGE IMAGE",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
 
-                    if (imageUrl.isNotBlank()) {
+                    if (imageModel != null) {
                         Spacer(modifier = Modifier.width(8.dp))
                         TextButton(
-                            onClick = { imageUrl = "" }
+                            onClick = {
+                                selectedImageUri = null
+                                imageUrl = ""
+                            },
+                            enabled = !isUploading
                         ) {
                             Text("REMOVE", color = StatusCancelled, fontSize = 11.sp)
                         }
@@ -716,6 +771,7 @@ fun AddEditItemDialog(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Item Name", color = TextMuted) },
+                    enabled = !isUploading,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = DarkSurface,
                         unfocusedContainerColor = DarkSurface,
@@ -737,6 +793,7 @@ fun AddEditItemDialog(
                         value = displayCategory,
                         onValueChange = {},
                         label = { Text("Category", color = TextMuted) },
+                        enabled = !isUploading,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = DarkSurface,
                             unfocusedContainerColor = DarkSurface,
@@ -751,15 +808,17 @@ fun AddEditItemDialog(
                     )
                     
                     // Invisible box to intercept clicks
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .clickable { 
-                                if (categoriesList.isNotEmpty()) {
-                                    categoryExpanded = true 
+                    if (!isUploading) {
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clickable { 
+                                    if (categoriesList.isNotEmpty()) {
+                                        categoryExpanded = true 
+                                    }
                                 }
-                            }
-                    )
+                        )
+                    }
                     
                     DropdownMenu(
                         expanded = categoryExpanded,
@@ -783,6 +842,7 @@ fun AddEditItemDialog(
                     value = priceStr,
                     onValueChange = { priceStr = it },
                     label = { Text("Price (৳)", color = TextMuted) },
+                    enabled = !isUploading,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = DarkSurface,
@@ -801,6 +861,7 @@ fun AddEditItemDialog(
                     value = costPriceStr,
                     onValueChange = { costPriceStr = it },
                     label = { Text("Cost Price / Purchase Price (৳)", color = TextMuted) },
+                    enabled = !isUploading,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = DarkSurface,
@@ -819,6 +880,7 @@ fun AddEditItemDialog(
                     value = description,
                     onValueChange = { description = it },
                     label = { Text("Description", color = TextMuted) },
+                    enabled = !isUploading,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = DarkSurface,
                         unfocusedContainerColor = DarkSurface,
@@ -840,6 +902,7 @@ fun AddEditItemDialog(
                     Switch(
                         checked = isAvailable,
                         onCheckedChange = { isAvailable = it },
+                        enabled = !isUploading,
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Color.Black,
                             checkedTrackColor = CurrencyGold
@@ -853,17 +916,27 @@ fun AddEditItemDialog(
                 onClick = {
                     val p = priceStr.toDoubleOrNull() ?: 0.0
                     val cp = costPriceStr.toDoubleOrNull() ?: 0.0
-                    if (name.isNotBlank()) {
-                        onSave(name, category, p, cp, description, imageUrl, isAvailable)
+                    if (name.isNotBlank() && !isUploading) {
+                        onSave(name, category, p, cp, description, selectedImageUri, imageUrl, isAvailable)
                     }
                 },
+                enabled = !isUploading,
                 colors = ButtonDefaults.buttonColors(containerColor = CurrencyGold, contentColor = Color.Black)
             ) {
-                Text("SAVE", fontWeight = FontWeight.Bold)
+                if (isUploading) {
+                    CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("SAVING...", fontWeight = FontWeight.Bold)
+                } else {
+                    Text("SAVE", fontWeight = FontWeight.Bold)
+                }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isUploading
+            ) {
                 Text("CANCEL", color = TextSecondary)
             }
         },

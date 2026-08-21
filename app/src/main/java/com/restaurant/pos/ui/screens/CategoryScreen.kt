@@ -71,7 +71,13 @@ fun CategoryScreen(
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onBack, modifier = Modifier.testTag("category_back_btn")) {
+                    IconButton(
+                        onClick = {
+                            viewModel.setIsAddingToOrder(false)
+                            onBack()
+                        },
+                        modifier = Modifier.testTag("category_back_btn")
+                    ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",

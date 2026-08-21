@@ -33,7 +33,8 @@ import java.util.Locale
 fun AddItemCartScreen(
     viewModel: RestaurantViewModel,
     onViewCart: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOrderUpdated: () -> Unit = onBack
 ) {
     val item by viewModel.selectedMenuItem.collectAsState()
     val cartItems by viewModel.cartItems.collectAsState()
@@ -97,7 +98,7 @@ fun AddItemCartScreen(
             }
         },
         bottomBar = {
-            if (cartItems.isNotEmpty()) {
+            if (cartItems.isNotEmpty() && !isAddingToOrder) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -320,9 +321,9 @@ fun AddItemCartScreen(
                 Button(
                     onClick = {
                         if (isAddingToOrder) {
-                            viewModel.addItemsToExistingOrder { success ->
+                            viewModel.addItemToExistingOrder(selectedDish, quantity) { success ->
                                 if (success) {
-                                    onBack() // Back to OrderDetailsScreen
+                                    onOrderUpdated()
                                 }
                             }
                         } else {

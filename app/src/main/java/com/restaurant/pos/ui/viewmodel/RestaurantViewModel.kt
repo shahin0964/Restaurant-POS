@@ -9,6 +9,7 @@ import com.restaurant.pos.data.backup.*
 import com.restaurant.pos.data.db.*
 import com.restaurant.pos.data.network.NetworkConnectivityObserver
 import com.restaurant.pos.data.sync.CloudSyncManager
+import com.restaurant.pos.data.storage.ProductImageStorageManager
 import com.restaurant.pos.data.repository.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -141,7 +142,7 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
 
     val receiptSetting: StateFlow<ReceiptSettingEntity?> = printerRepo.receiptSetting.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
+        started = SharingStarted.Eagerly,
         initialValue = null
     )
 
@@ -321,8 +322,64 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    fun saveMenuItemWithImageUpload(
+        id: Long = 0,
+        name: String,
+        categoryName: String,
+        price: Double,
+        costPrice: Double = 0.0,
+        description: String,
+        selectedImageUri: Uri?,
+        existingImageUrl: String,
+        isAvailable: Boolean,
+        onProgress: (Boolean) -> Unit = {},
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            var finalImageUrl = existingImageUrl
+
+            if (selectedImageUri != null) {
+                onProgress(true)
+                // Use existing ID or random unique suffix for new product storage key
+                val productIdKey = if (id != 0L) id.toString() else java.util.UUID.randomUUID().toString().take(8)
+                val uploadResult = ProductImageStorageManager.uploadProductImage(
+                    productId = productIdKey,
+                    imageUri = selectedImageUri,
+                    context = getApplication()
+                )
+
+                if (uploadResult.isSuccess) {
+                    finalImageUrl = uploadResult.getOrThrow()
+                } else {
+                    onProgress(false)
+                    val errorMsg = uploadResult.exceptionOrNull()?.localizedMessage ?: "Failed to upload image to Firebase Storage."
+                    onError(errorMsg)
+                    return@launch
+                }
+                onProgress(false)
+            }
+
+            restaurantRepo.saveMenuItem(
+                id = id,
+                name = name,
+                categoryName = categoryName,
+                price = price,
+                costPrice = costPrice,
+                description = description,
+                imageUrl = finalImageUrl,
+                isAvailable = isAvailable
+            )
+            forceCloudSync()
+            onSuccess()
+        }
+    }
+
     fun deleteMenuItem(item: MenuItemEntity, onComplete: () -> Unit = {}) {
         viewModelScope.launch {
+            if (item.imageUrl.isNotBlank() && item.imageUrl.contains("firebasestorage.googleapis.com")) {
+                ProductImageStorageManager.deleteProductImage(item.id.toString())
+            }
             restaurantRepo.deleteMenuItem(item)
             forceCloudSync()
             onComplete()
@@ -614,20 +671,66 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
     val orderNote: StateFlow<String> = _orderNote.asStateFlow()
 
     private val _discount = MutableStateFlow(0.0)
-    val discount: StateFlow<Double> = _discount.asStateFlow()
+    val discount: StateFlow<Double> = combine(_cartItems, _discount, allOffers) { cart, manualDisc, offers ->
+        val gross = cart.sumOf { it.menuItem.price * it.quantity }
+        val prodDisc = cart.sumOf { cartItem ->
+            val item = cartItem.menuItem
+            if (item.discountEnabled) {
+                val disc = if (item.discountType == "PERCENTAGE") {
+                    item.price * (item.discountValue / 100.0)
+                } else {
+                    item.discountValue
+                }
+                disc * cartItem.quantity
+            } else {
+                0.0
+            }
+        }
+        val activeOffers = offers.filter { it.isActive }
+        val offerDisc = activeOffers.sumOf { offer ->
+            if (gross >= offer.minOrderAmount) {
+                val disc = if (offer.discountType == "PERCENTAGE") {
+                    gross * (offer.discountValue / 100.0)
+                } else {
+                    offer.discountValue
+                }
+                if (offer.maxDiscountAmount > 0.0) disc.coerceAtMost(offer.maxDiscountAmount) else disc
+            } else 0.0
+        }
+        (prodDisc + manualDisc + offerDisc).coerceAtMost(gross)
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = 0.0
+    )
 
-    val tax: StateFlow<Double> = combine(_cartItems, _discount, receiptSetting) { cart, disc, setting ->
-        if (setting == null || !setting.isTaxEnabled || setting.taxRate <= 0.0) {
+    private val _customTaxRate = MutableStateFlow<Double?>(null)
+    val customTaxRate: StateFlow<Double?> = _customTaxRate.asStateFlow()
+
+    fun setCustomTaxRate(rate: Double?) {
+        _customTaxRate.value = rate
+    }
+
+    val effectiveTaxRate: StateFlow<Double> = combine(_customTaxRate, receiptSetting) { custom, setting ->
+        custom ?: if (setting?.isTaxEnabled == true) setting.taxRate else 0.0
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = 0.0
+    )
+
+    val tax: StateFlow<Double> = combine(_cartItems, discount, effectiveTaxRate) { cart, totalDisc, rate ->
+        if (rate <= 0.0) {
             0.0
         } else {
             val sub = cart.sumOf { it.menuItem.price * it.quantity }
-            val net = (sub - disc).coerceAtLeast(0.0)
-            val calc = net * (setting.taxRate / 100.0)
+            val net = (sub - totalDisc).coerceAtLeast(0.0)
+            val calc = net * (rate / 100.0)
             if (calc.isNaN() || calc.isInfinite() || calc < 0.0) 0.0 else calc
         }
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
+        started = SharingStarted.Eagerly,
         initialValue = 0.0
     )
 
@@ -641,19 +744,60 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
         _isAddingToOrder.value = isAdding
     }
 
-    fun addItemsToExistingOrder(onComplete: (Boolean) -> Unit) {
-        val orderId = selectedOrderForDetails.value?.order?.id ?: return
-        val itemsToAdd = _cartItems.value
-        if (itemsToAdd.isEmpty()) {
+    fun addItemToExistingOrder(
+        item: MenuItemEntity,
+        quantity: Int = 1,
+        note: String = "",
+        onComplete: (Boolean) -> Unit = {}
+    ) {
+        val orderId = selectedOrderForDetails.value?.order?.id ?: run {
+            onComplete(false)
+            return
+        }
+        if (quantity <= 0) {
             onComplete(false)
             return
         }
 
+        val cartItem = CartItem(menuItem = item, quantity = quantity, note = note)
+        val setting = receiptSetting.value
+        val taxRate = if (setting?.isTaxEnabled == true) setting.taxRate else null
+
         viewModelScope.launch {
-            restaurantRepo.addItemsToExistingOrder(orderId, itemsToAdd)
+            restaurantRepo.addItemsToExistingOrder(orderId, listOf(cartItem), taxRate)
             clearCart()
             setIsAddingToOrder(false)
-            // Need to refresh selectedOrderForDetails
+            val updatedOrder = restaurantRepo.getOrderById(orderId)
+            _selectedOrderForDetails.value = updatedOrder
+            forceCloudSync()
+            onComplete(true)
+        }
+    }
+
+    fun addItemsToExistingOrder(onComplete: (Boolean) -> Unit) {
+        val orderId = selectedOrderForDetails.value?.order?.id ?: run {
+            onComplete(false)
+            return
+        }
+        val itemsToAdd = _cartItems.value
+        if (itemsToAdd.isEmpty()) {
+            // Check if selectedMenuItem exists as fallback
+            val selected = _selectedMenuItem.value
+            if (selected != null) {
+                addItemToExistingOrder(selected, 1, "", onComplete)
+                return
+            }
+            onComplete(false)
+            return
+        }
+
+        val setting = receiptSetting.value
+        val taxRate = if (setting?.isTaxEnabled == true) setting.taxRate else null
+
+        viewModelScope.launch {
+            restaurantRepo.addItemsToExistingOrder(orderId, itemsToAdd, taxRate)
+            clearCart()
+            setIsAddingToOrder(false)
             val updatedOrder = restaurantRepo.getOrderById(orderId)
             _selectedOrderForDetails.value = updatedOrder
             forceCloudSync()
@@ -722,44 +866,69 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
     fun clearCart() {
         _cartItems.value = emptyList()
         _discount.value = 0.0
+        _customTaxRate.value = null
     }
 
     fun calculateSubtotal(): Double {
+        return _cartItems.value.sumOf { it.menuItem.price * it.quantity }
+    }
+
+    fun calculateProductDiscount(): Double {
         return _cartItems.value.sumOf { cartItem ->
             val item = cartItem.menuItem
-            val price = if (item.discountEnabled) {
-                val discount = if (item.discountType == "PERCENTAGE") {
+            if (item.discountEnabled) {
+                val disc = if (item.discountType == "PERCENTAGE") {
                     item.price * (item.discountValue / 100.0)
                 } else {
                     item.discountValue
                 }
-                (item.price - discount).coerceAtLeast(0.0)
+                disc * cartItem.quantity
             } else {
-                item.price
+                0.0
             }
-            price * cartItem.quantity
         }
     }
 
+    fun calculateTotalDiscount(): Double {
+        val gross = calculateSubtotal()
+        val prodDisc = calculateProductDiscount()
+        val manualDisc = _discount.value
+        val activeOffers = allOffers.value.filter { it.isActive }
+        val offerDisc = activeOffers.sumOf { offer ->
+            if (gross >= offer.minOrderAmount) {
+                val disc = if (offer.discountType == "PERCENTAGE") {
+                    gross * (offer.discountValue / 100.0)
+                } else {
+                    offer.discountValue
+                }
+                if (offer.maxDiscountAmount > 0.0) disc.coerceAtMost(offer.maxDiscountAmount) else disc
+            } else 0.0
+        }
+        return (prodDisc + manualDisc + offerDisc).coerceAtMost(gross)
+    }
+
     fun calculateTax(): Double {
-        val setting = receiptSetting.value
-        if (setting == null || !setting.isTaxEnabled || setting.taxRate <= 0.0) return 0.0
-        val sub = calculateSubtotal()
-        val net = (sub - _discount.value).coerceAtLeast(0.0)
-        val calc = net * (setting.taxRate / 100.0)
+        val rate = effectiveTaxRate.value
+        if (rate <= 0.0) return 0.0
+        val gross = calculateSubtotal()
+        val totalDisc = calculateTotalDiscount()
+        val net = (gross - totalDisc).coerceAtLeast(0.0)
+        val calc = net * (rate / 100.0)
         return if (calc.isNaN() || calc.isInfinite() || calc < 0.0) 0.0 else calc
     }
 
     fun calculateTotal(): Double {
-        val sub = calculateSubtotal()
+        val gross = calculateSubtotal()
+        val totalDisc = calculateTotalDiscount()
         val taxVal = calculateTax()
-        val total = sub - _discount.value + taxVal
+        val total = gross - totalDisc + taxVal
         return if (total < 0) 0.0 else total
     }
 
     fun placeOrder(paymentMethod: String, onOrderPlaced: (Long) -> Unit) {
         viewModelScope.launch {
             val subtotal = calculateSubtotal()
+            val totalDisc = calculateTotalDiscount()
             val taxVal = calculateTax()
             val total = calculateTotal()
             val selectedTId = if (_orderType.value.lowercase().contains("dine")) _selectedTableId.value else null
@@ -769,7 +938,7 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
                 customerName = _customerName.value,
                 note = _orderNote.value,
                 subtotal = subtotal,
-                discount = _discount.value,
+                discount = totalDisc,
                 tax = taxVal,
                 total = total,
                 paymentMethod = paymentMethod,
@@ -922,8 +1091,114 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
     private val _recentBackups = MutableStateFlow<List<BackupFileInfo>>(emptyList())
     val recentBackups: StateFlow<List<BackupFileInfo>> = _recentBackups.asStateFlow()
 
+    // Auto Backup State
+    private val _autoBackupEnabled = MutableStateFlow(false)
+    val autoBackupEnabled: StateFlow<Boolean> = _autoBackupEnabled.asStateFlow()
+
+    private val _autoBackupFrequency = MutableStateFlow("Daily")
+    val autoBackupFrequency: StateFlow<String> = _autoBackupFrequency.asStateFlow()
+
+    private val _lastAutoBackupTime = MutableStateFlow(0L)
+    val lastAutoBackupTime: StateFlow<Long> = _lastAutoBackupTime.asStateFlow()
+
+    private val _lastAutoBackupStatus = MutableStateFlow<String?>(null)
+    val lastAutoBackupStatus: StateFlow<String?> = _lastAutoBackupStatus.asStateFlow()
+
+    private val _lastAutoBackupError = MutableStateFlow<String?>(null)
+    val lastAutoBackupError: StateFlow<String?> = _lastAutoBackupError.asStateFlow()
+
+    private val _lastAutoBackupFile = MutableStateFlow<String?>(null)
+    val lastAutoBackupFile: StateFlow<String?> = _lastAutoBackupFile.asStateFlow()
+
     init {
         loadRecentBackupsFromPrefs()
+        loadAutoBackupSettings()
+    }
+
+    fun refreshAutoBackupState() {
+        loadAutoBackupSettings()
+    }
+
+    private fun loadAutoBackupSettings() {
+        try {
+            val prefs = getApplication<Application>().getSharedPreferences("pos_backup_prefs", Context.MODE_PRIVATE)
+            val isEnabled = prefs.getBoolean("auto_backup_enabled", false)
+            val frequency = prefs.getString("auto_backup_frequency", "Daily") ?: "Daily"
+            val lastTime = prefs.getLong("last_auto_backup_time", 0L)
+            val status = prefs.getString("last_auto_backup_status", null)
+            val error = prefs.getString("last_auto_backup_error", null)
+            val file = prefs.getString("last_auto_backup_file", null)
+
+            _autoBackupEnabled.value = isEnabled
+            _autoBackupFrequency.value = frequency
+            _lastAutoBackupTime.value = lastTime
+            _lastAutoBackupStatus.value = status
+            _lastAutoBackupError.value = error
+            _lastAutoBackupFile.value = file
+
+            if (isEnabled) {
+                AutoBackupScheduler.scheduleOrUpdate(getApplication(), true, frequency)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun setAutoBackupEnabled(enabled: Boolean) {
+        val prefs = getApplication<Application>().getSharedPreferences("pos_backup_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("auto_backup_enabled", enabled).apply()
+        _autoBackupEnabled.value = enabled
+        AutoBackupScheduler.scheduleOrUpdate(getApplication(), enabled, _autoBackupFrequency.value)
+    }
+
+    fun setAutoBackupFrequency(frequency: String) {
+        val prefs = getApplication<Application>().getSharedPreferences("pos_backup_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putString("auto_backup_frequency", frequency).apply()
+        _autoBackupFrequency.value = frequency
+        if (_autoBackupEnabled.value) {
+            AutoBackupScheduler.scheduleOrUpdate(getApplication(), true, frequency)
+        }
+    }
+
+    fun runAutoBackupNow() {
+        viewModelScope.launch {
+            _backupOperationState.value = BackupOpState.Progress("Running automatic backup...")
+            val result = backupManager.createAutoBackup()
+            when (result) {
+                is BackupResult.Success -> {
+                    val prefs = getApplication<Application>().getSharedPreferences("pos_backup_prefs", Context.MODE_PRIVATE)
+                    prefs.edit()
+                        .putLong("last_auto_backup_time", result.fileInfo.timestamp)
+                        .putString("last_auto_backup_status", "SUCCESS")
+                        .putString("last_auto_backup_error", null)
+                        .putString("last_auto_backup_file", result.fileInfo.fileName)
+                        .putString("last_auto_backup_summary", result.fileInfo.recordSummary)
+                        .apply()
+
+                    _lastAutoBackupTime.value = result.fileInfo.timestamp
+                    _lastAutoBackupStatus.value = "SUCCESS"
+                    _lastAutoBackupError.value = null
+                    _lastAutoBackupFile.value = result.fileInfo.fileName
+
+                    _backupOperationState.value = BackupOpState.Success(
+                        title = "Auto Backup completed successfully",
+                        detail = "Saved to: ${result.fileInfo.fileName}\nTime: ${result.fileInfo.createdAtFormatted}\nSize: ${result.fileInfo.sizeFormatted}\nSummary: ${result.fileInfo.recordSummary}"
+                    )
+                }
+                is BackupResult.Error -> {
+                    val prefs = getApplication<Application>().getSharedPreferences("pos_backup_prefs", Context.MODE_PRIVATE)
+                    prefs.edit()
+                        .putString("last_auto_backup_status", "FAILED")
+                        .putString("last_auto_backup_error", result.message)
+                        .apply()
+
+                    _lastAutoBackupStatus.value = "FAILED"
+                    _lastAutoBackupError.value = result.message
+
+                    _backupOperationState.value = BackupOpState.Error("Auto Backup failed: ${result.message}")
+                }
+            }
+        }
     }
 
     private fun loadRecentBackupsFromPrefs() {

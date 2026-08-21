@@ -8,10 +8,14 @@ import com.restaurant.pos.data.db.*
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class BackupFileInfo(
     val fileName: String,
@@ -56,233 +60,252 @@ class BackupManager(
     private val context: Context,
     private val database: AppDatabase
 ) {
-    suspend fun createBackup(targetUri: Uri): BackupResult {
-        return try {
-            val categories = database.categoryDao().getAllCategoriesSync()
-            val menuItems = database.menuItemDao().getAllMenuItemsSync()
-            val orders = database.orderDao().getAllOrderEntities()
-            val orderItems = database.orderDao().getAllOrderItemEntities()
-            val expenses = database.expenseDao().getAllExpensesSync()
-            val stockLogs = database.stockLogDao().getAllStockLogsSync()
-            val offers = database.offerDao().getAllOffersSync()
-            val receiptSetting = database.receiptSettingDao().getReceiptSettingSync() ?: ReceiptSettingEntity()
-            val printerSetting = database.printerSettingDao().getPrinterSettingSync() ?: PrinterSettingEntity()
-            val users = database.userDao().getAllUsersSync()
+    private data class GeneratedBackup(
+        val jsonBytes: ByteArray,
+        val formattedDate: String,
+        val now: Long,
+        val summary: String
+    )
 
-            val now = System.currentTimeMillis()
-            val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
-            val formattedDate = dateFormat.format(Date(now))
+    private suspend fun generateBackupPayload(): GeneratedBackup {
+        val categories = database.categoryDao().getAllCategoriesSync()
+        val menuItems = database.menuItemDao().getAllMenuItemsSync()
+        val orders = database.orderDao().getAllOrderEntities()
+        val orderItems = database.orderDao().getAllOrderItemEntities()
+        val expenses = database.expenseDao().getAllExpensesSync()
+        val stockLogs = database.stockLogDao().getAllStockLogsSync()
+        val offers = database.offerDao().getAllOffersSync()
+        val receiptSetting = database.receiptSettingDao().getReceiptSettingSync() ?: ReceiptSettingEntity()
+        val printerSetting = database.printerSettingDao().getPrinterSettingSync() ?: PrinterSettingEntity()
+        val users = database.userDao().getAllUsersSync()
 
-            val metadataObj = JSONObject().apply {
-                put("backupVersion", 1)
-                put("appName", "Restaurant POS")
-                put("packageName", context.packageName)
-                put("appVersion", com.restaurant.pos.BuildConfig.VERSION_NAME)
-                put("dbVersion", 8)
-                put("timestamp", now)
-                put("createdAt", formattedDate)
+        val now = System.currentTimeMillis()
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+        val formattedDate = dateFormat.format(Date(now))
 
-                val countsObj = JSONObject().apply {
-                    put("categories", categories.size)
-                    put("menuItems", menuItems.size)
-                    put("orders", orders.size)
-                    put("orderItems", orderItems.size)
-                    put("expenses", expenses.size)
-                    put("stockLogs", stockLogs.size)
-                    put("offers", offers.size)
-                    put("users", users.size)
-                    put("receiptSetting", 1)
-                    put("printerSetting", 1)
+        val metadataObj = JSONObject().apply {
+            put("backupVersion", 1)
+            put("appName", "Restaurant POS")
+            put("packageName", context.packageName)
+            put("appVersion", com.restaurant.pos.BuildConfig.VERSION_NAME)
+            put("dbVersion", 8)
+            put("timestamp", now)
+            put("createdAt", formattedDate)
+
+            val countsObj = JSONObject().apply {
+                put("categories", categories.size)
+                put("menuItems", menuItems.size)
+                put("orders", orders.size)
+                put("orderItems", orderItems.size)
+                put("expenses", expenses.size)
+                put("stockLogs", stockLogs.size)
+                put("offers", offers.size)
+                put("users", users.size)
+                put("receiptSetting", 1)
+                put("printerSetting", 1)
+            }
+            put("recordCounts", countsObj)
+        }
+
+        val dataObj = JSONObject().apply {
+            put("categories", JSONArray().apply {
+                categories.forEach { cat ->
+                    put(JSONObject().apply {
+                        put("id", cat.id)
+                        put("name", cat.name)
+                        put("itemCount", cat.itemCount)
+                        put("iconName", cat.iconName)
+                        put("imageUrl", cat.imageUrl)
+                    })
                 }
-                put("recordCounts", countsObj)
-            }
+            })
 
-            val dataObj = JSONObject().apply {
-                put("categories", JSONArray().apply {
-                    categories.forEach { cat ->
-                        put(JSONObject().apply {
-                            put("id", cat.id)
-                            put("name", cat.name)
-                            put("itemCount", cat.itemCount)
-                            put("iconName", cat.iconName)
-                            put("imageUrl", cat.imageUrl)
-                        })
-                    }
-                })
+            put("menuItems", JSONArray().apply {
+                menuItems.forEach { item ->
+                    put(JSONObject().apply {
+                        put("id", item.id)
+                        put("name", item.name)
+                        put("categoryId", item.categoryId)
+                        put("categoryName", item.categoryName)
+                        put("price", item.price)
+                        put("description", item.description)
+                        put("imageUrl", item.imageUrl)
+                        put("isAvailable", item.isAvailable)
+                        put("stockQuantity", item.stockQuantity)
+                        put("unit", item.unit)
+                        put("lowStockThreshold", item.lowStockThreshold)
+                    })
+                }
+            })
 
-                put("menuItems", JSONArray().apply {
-                    menuItems.forEach { item ->
-                        put(JSONObject().apply {
-                            put("id", item.id)
-                            put("name", item.name)
-                            put("categoryId", item.categoryId)
-                            put("categoryName", item.categoryName)
-                            put("price", item.price)
-                            put("description", item.description)
-                            put("imageUrl", item.imageUrl)
-                            put("isAvailable", item.isAvailable)
-                            put("stockQuantity", item.stockQuantity)
-                            put("unit", item.unit)
-                            put("lowStockThreshold", item.lowStockThreshold)
-                        })
-                    }
-                })
+            put("orders", JSONArray().apply {
+                orders.forEach { order ->
+                    put(JSONObject().apply {
+                        put("id", order.id)
+                        put("orderNumber", order.orderNumber)
+                        put("orderType", order.orderType)
+                        put("tableNumber", order.tableNumber)
+                        put("customerName", order.customerName)
+                        put("status", order.status)
+                        put("note", order.note)
+                        put("subtotal", order.subtotal)
+                        put("discount", order.discount)
+                        put("tax", order.tax)
+                        put("total", order.total)
+                        put("paymentMethod", order.paymentMethod)
+                        put("isPaid", order.isPaid)
+                        put("timestamp", order.timestamp)
+                        put("tableId", order.tableId ?: JSONObject.NULL)
+                    })
+                }
+            })
 
-                put("orders", JSONArray().apply {
-                    orders.forEach { order ->
-                        put(JSONObject().apply {
-                            put("id", order.id)
-                            put("orderNumber", order.orderNumber)
-                            put("orderType", order.orderType)
-                            put("tableNumber", order.tableNumber)
-                            put("customerName", order.customerName)
-                            put("status", order.status)
-                            put("note", order.note)
-                            put("subtotal", order.subtotal)
-                            put("discount", order.discount)
-                            put("tax", order.tax)
-                            put("total", order.total)
-                            put("paymentMethod", order.paymentMethod)
-                            put("isPaid", order.isPaid)
-                            put("timestamp", order.timestamp)
-                            put("tableId", order.tableId ?: JSONObject.NULL)
-                        })
-                    }
-                })
+            put("orderItems", JSONArray().apply {
+                orderItems.forEach { item ->
+                    put(JSONObject().apply {
+                        put("id", item.id)
+                        put("orderId", item.orderId)
+                        put("menuItemId", item.menuItemId)
+                        put("menuItemName", item.menuItemName)
+                        put("pricePerUnit", item.pricePerUnit)
+                        put("quantity", item.quantity)
+                        put("note", item.note)
+                    })
+                }
+            })
 
-                put("orderItems", JSONArray().apply {
-                    orderItems.forEach { item ->
-                        put(JSONObject().apply {
-                            put("id", item.id)
-                            put("orderId", item.orderId)
-                            put("menuItemId", item.menuItemId)
-                            put("menuItemName", item.menuItemName)
-                            put("pricePerUnit", item.pricePerUnit)
-                            put("quantity", item.quantity)
-                            put("note", item.note)
-                        })
-                    }
-                })
+            put("expenses", JSONArray().apply {
+                expenses.forEach { exp ->
+                    put(JSONObject().apply {
+                        put("id", exp.id)
+                        put("title", exp.title)
+                        put("amount", exp.amount)
+                        put("category", exp.category)
+                        put("note", exp.note)
+                        put("timestamp", exp.timestamp)
+                    })
+                }
+            })
 
-                put("expenses", JSONArray().apply {
-                    expenses.forEach { exp ->
-                        put(JSONObject().apply {
-                            put("id", exp.id)
-                            put("title", exp.title)
-                            put("amount", exp.amount)
-                            put("category", exp.category)
-                            put("note", exp.note)
-                            put("timestamp", exp.timestamp)
-                        })
-                    }
-                })
+            put("stockLogs", JSONArray().apply {
+                stockLogs.forEach { log ->
+                    put(JSONObject().apply {
+                        put("id", log.id)
+                        put("menuItemId", log.menuItemId)
+                        put("menuItemName", log.menuItemName)
+                        put("changeAmount", log.changeAmount)
+                        put("type", log.type)
+                        put("note", log.note)
+                        put("timestamp", log.timestamp)
+                    })
+                }
+            })
 
-                put("stockLogs", JSONArray().apply {
-                    stockLogs.forEach { log ->
-                        put(JSONObject().apply {
-                            put("id", log.id)
-                            put("menuItemId", log.menuItemId)
-                            put("menuItemName", log.menuItemName)
-                            put("changeAmount", log.changeAmount)
-                            put("type", log.type)
-                            put("note", log.note)
-                            put("timestamp", log.timestamp)
-                        })
-                    }
-                })
+            put("offers", JSONArray().apply {
+                offers.forEach { off ->
+                    put(JSONObject().apply {
+                        put("id", off.id)
+                        put("name", off.name)
+                        put("discountType", off.discountType)
+                        put("discountValue", off.discountValue)
+                        put("startDate", off.startDate)
+                        put("endDate", off.endDate)
+                        put("minOrderAmount", off.minOrderAmount)
+                        put("maxDiscountAmount", off.maxDiscountAmount)
+                        put("isActive", off.isActive)
+                    })
+                }
+            })
 
-                put("offers", JSONArray().apply {
-                    offers.forEach { off ->
-                        put(JSONObject().apply {
-                            put("id", off.id)
-                            put("name", off.name)
-                            put("discountType", off.discountType)
-                            put("discountValue", off.discountValue)
-                            put("startDate", off.startDate)
-                            put("endDate", off.endDate)
-                            put("minOrderAmount", off.minOrderAmount)
-                            put("maxDiscountAmount", off.maxDiscountAmount)
-                            put("isActive", off.isActive)
-                        })
-                    }
-                })
+            put("users", JSONArray().apply {
+                users.forEach { u ->
+                    put(JSONObject().apply {
+                        put("id", u.id)
+                        put("emailOrPhone", u.emailOrPhone)
+                        put("name", u.name)
+                        put("role", u.role)
+                        // PROTECTED: Do not export passwords or secrets in plain text
+                        put("passwordHash", "[PROTECTED]")
+                        put("isCurrentSession", false)
+                        put("isActive", u.isActive)
+                    })
+                }
+            })
 
-                put("users", JSONArray().apply {
-                    users.forEach { u ->
-                        put(JSONObject().apply {
-                            put("id", u.id)
-                            put("emailOrPhone", u.emailOrPhone)
-                            put("name", u.name)
-                            put("role", u.role)
-                            // PROTECTED: Do not export passwords or secrets in plain text
-                            put("passwordHash", "[PROTECTED]")
-                            put("isCurrentSession", false)
-                            put("isActive", u.isActive)
-                        })
-                    }
-                })
+            put("receiptSetting", JSONObject().apply {
+                put("id", receiptSetting.id)
+                put("shopName", receiptSetting.shopName)
+                put("phone", receiptSetting.phone)
+                put("address", receiptSetting.address)
+                put("email", receiptSetting.email)
+                put("website", receiptSetting.website)
+                put("logoUri", receiptSetting.logoUri)
+                put("footerText", receiptSetting.footerText)
+                put("currencySymbol", receiptSetting.currencySymbol)
+                put("currencyCode", receiptSetting.currencyCode)
+                put("isTaxEnabled", receiptSetting.isTaxEnabled)
+                put("taxRate", receiptSetting.taxRate)
+                put("showShopName", receiptSetting.showShopName)
+                put("showLogo", receiptSetting.showLogo)
+                put("showPhone", receiptSetting.showPhone)
+                put("showAddress", receiptSetting.showAddress)
+                put("showOrderNumber", receiptSetting.showOrderNumber)
+                put("showDateTime", receiptSetting.showDateTime)
+                put("showCustomerName", receiptSetting.showCustomerName)
+                put("showOrderType", receiptSetting.showOrderType)
+                put("showItems", receiptSetting.showItems)
+                put("showQuantity", receiptSetting.showQuantity)
+                put("showItemPrice", receiptSetting.showItemPrice)
+                put("showSubtotal", receiptSetting.showSubtotal)
+                put("showDiscount", receiptSetting.showDiscount)
+                put("showTax", receiptSetting.showTax)
+                put("showTotal", receiptSetting.showTotal)
+                put("showPaymentStatus", receiptSetting.showPaymentStatus)
+                put("showFooter", receiptSetting.showFooter)
+            })
 
-                put("receiptSetting", JSONObject().apply {
-                    put("id", receiptSetting.id)
-                    put("shopName", receiptSetting.shopName)
-                    put("phone", receiptSetting.phone)
-                    put("address", receiptSetting.address)
-                    put("email", receiptSetting.email)
-                    put("website", receiptSetting.website)
-                    put("logoUri", receiptSetting.logoUri)
-                    put("footerText", receiptSetting.footerText)
-                    put("currencySymbol", receiptSetting.currencySymbol)
-                    put("currencyCode", receiptSetting.currencyCode)
-                    put("isTaxEnabled", receiptSetting.isTaxEnabled)
-                    put("taxRate", receiptSetting.taxRate)
-                    put("showShopName", receiptSetting.showShopName)
-                    put("showLogo", receiptSetting.showLogo)
-                    put("showPhone", receiptSetting.showPhone)
-                    put("showAddress", receiptSetting.showAddress)
-                    put("showOrderNumber", receiptSetting.showOrderNumber)
-                    put("showDateTime", receiptSetting.showDateTime)
-                    put("showCustomerName", receiptSetting.showCustomerName)
-                    put("showOrderType", receiptSetting.showOrderType)
-                    put("showItems", receiptSetting.showItems)
-                    put("showQuantity", receiptSetting.showQuantity)
-                    put("showItemPrice", receiptSetting.showItemPrice)
-                    put("showSubtotal", receiptSetting.showSubtotal)
-                    put("showDiscount", receiptSetting.showDiscount)
-                    put("showTax", receiptSetting.showTax)
-                    put("showTotal", receiptSetting.showTotal)
-                    put("showPaymentStatus", receiptSetting.showPaymentStatus)
-                    put("showFooter", receiptSetting.showFooter)
-                })
+            put("printerSetting", JSONObject().apply {
+                put("id", printerSetting.id)
+                put("connectionType", printerSetting.connectionType)
+                put("printerName", printerSetting.printerName)
+                put("macAddress", printerSetting.macAddress)
+                put("ipAddress", printerSetting.ipAddress)
+                put("port", printerSetting.port)
+                put("paperSize", printerSetting.paperSize)
+                put("autoPrintOnOrder", printerSetting.autoPrintOnOrder)
+                put("isConnected", false)
+                put("printerType", printerSetting.printerType)
+                put("bluetoothAddress", printerSetting.bluetoothAddress)
+            })
+        }
 
-                put("printerSetting", JSONObject().apply {
-                    put("id", printerSetting.id)
-                    put("connectionType", printerSetting.connectionType)
-                    put("printerName", printerSetting.printerName)
-                    put("macAddress", printerSetting.macAddress)
-                    put("ipAddress", printerSetting.ipAddress)
-                    put("port", printerSetting.port)
-                    put("paperSize", printerSetting.paperSize)
-                    put("autoPrintOnOrder", printerSetting.autoPrintOnOrder)
-                    put("isConnected", false)
-                    put("printerType", printerSetting.printerType)
-                    put("bluetoothAddress", printerSetting.bluetoothAddress)
-                })
-            }
+        val rootObj = JSONObject().apply {
+            put("metadata", metadataObj)
+            put("data", dataObj)
+        }
 
-            val rootObj = JSONObject().apply {
-                put("metadata", metadataObj)
-                put("data", dataObj)
-            }
+        val jsonBytes = rootObj.toString(2).toByteArray(Charsets.UTF_8)
+        val summary = "${menuItems.size} Menu Items, ${orders.size} Orders, ${expenses.size} Expenses, ${categories.size} Categories"
 
-            val jsonBytes = rootObj.toString(2).toByteArray(Charsets.UTF_8)
+        return GeneratedBackup(
+            jsonBytes = jsonBytes,
+            formattedDate = formattedDate,
+            now = now,
+            summary = summary
+        )
+    }
+
+    suspend fun createBackup(targetUri: Uri): BackupResult = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val payload = generateBackupPayload()
 
             context.contentResolver.openOutputStream(targetUri)?.use { outStream ->
-                outStream.write(jsonBytes)
+                outStream.write(payload.jsonBytes)
                 outStream.flush()
-            } ?: return BackupResult.Error("Failed to open storage output stream.")
+            } ?: return@withContext BackupResult.Error("Failed to open storage output stream.")
 
             var fileName = "Restaurant_POS_Backup.json"
-            var fileSize = jsonBytes.size.toLong()
+            var fileSize = payload.jsonBytes.size.toLong()
 
             context.contentResolver.query(targetUri, null, null, null, null)?.use { cursor ->
                 if (cursor.moveToFirst()) {
@@ -294,20 +317,83 @@ class BackupManager(
             }
 
             val sizeKb = String.format(Locale.US, "%.1f KB", fileSize / 1024.0)
-            val summary = "${menuItems.size} Menu Items, ${orders.size} Orders, ${expenses.size} Expenses, ${categories.size} Categories"
 
             val info = BackupFileInfo(
                 fileName = fileName,
                 uriString = targetUri.toString(),
-                createdAtFormatted = formattedDate,
+                createdAtFormatted = payload.formattedDate,
                 sizeFormatted = sizeKb,
-                recordSummary = summary,
-                timestamp = now
+                recordSummary = payload.summary,
+                timestamp = payload.now
             )
 
             BackupResult.Success(info)
         } catch (e: Exception) {
             BackupResult.Error("Backup could not be created: ${e.localizedMessage ?: "Unknown error"}")
+        }
+    }
+
+    suspend fun createAutoBackup(): BackupResult = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val payload = generateBackupPayload()
+
+            val autoBackupDir = File(context.filesDir, "auto_backups")
+            if (!autoBackupDir.exists()) {
+                autoBackupDir.mkdirs()
+            }
+
+            val fileDateFormat = SimpleDateFormat("yyyy-MM-dd_HHmmss", Locale.US)
+            val fileName = "auto_backup_${fileDateFormat.format(Date(payload.now))}.json"
+            val targetFile = File(autoBackupDir, fileName)
+            val tempFile = File(autoBackupDir, "$fileName.tmp")
+
+            FileOutputStream(tempFile).use { outStream ->
+                outStream.write(payload.jsonBytes)
+                outStream.flush()
+            }
+
+            if (tempFile.exists() && tempFile.length() > 0) {
+                if (targetFile.exists()) targetFile.delete()
+                tempFile.renameTo(targetFile)
+            } else {
+                return@withContext BackupResult.Error("Failed to write auto backup file.")
+            }
+
+            // Retention: Keep latest 7 auto backups
+            cleanOldAutoBackups(autoBackupDir, maxKeep = 7)
+
+            val fileSize = targetFile.length()
+            val sizeKb = String.format(Locale.US, "%.1f KB", fileSize / 1024.0)
+
+            val info = BackupFileInfo(
+                fileName = fileName,
+                uriString = targetFile.absolutePath,
+                createdAtFormatted = payload.formattedDate,
+                sizeFormatted = sizeKb,
+                recordSummary = payload.summary,
+                timestamp = payload.now
+            )
+
+            BackupResult.Success(info)
+        } catch (e: Exception) {
+            BackupResult.Error("Auto backup failed: ${e.localizedMessage ?: "Unknown error"}")
+        }
+    }
+
+    private fun cleanOldAutoBackups(dir: File, maxKeep: Int = 7) {
+        try {
+            val files = dir.listFiles { f ->
+                f.isFile && f.name.startsWith("auto_backup_") && f.name.endsWith(".json")
+            } ?: return
+            if (files.size > maxKeep) {
+                files.sortedByDescending { it.lastModified() }
+                    .drop(maxKeep)
+                    .forEach { fileToDelete ->
+                        fileToDelete.delete()
+                    }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 

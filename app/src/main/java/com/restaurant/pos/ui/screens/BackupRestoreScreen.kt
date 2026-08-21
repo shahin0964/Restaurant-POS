@@ -20,7 +20,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -54,6 +56,11 @@ fun BackupRestoreScreen(
     val cloudState by viewModel.cloudOperationState.collectAsState()
     val pendingRestoreData by viewModel.pendingRestoreData.collectAsState()
     val recentBackups by viewModel.recentBackups.collectAsState()
+    val autoBackupEnabled by viewModel.autoBackupEnabled.collectAsState()
+    val autoBackupFrequency by viewModel.autoBackupFrequency.collectAsState()
+    val lastAutoBackupTime by viewModel.lastAutoBackupTime.collectAsState()
+    val lastAutoBackupStatus by viewModel.lastAutoBackupStatus.collectAsState()
+    val lastAutoBackupError by viewModel.lastAutoBackupError.collectAsState()
 
     var showCloudRestoreConfirm by remember { mutableStateOf(false) }
 
@@ -260,6 +267,196 @@ fun BackupRestoreScreen(
                                     Text("RESTORE", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)
                                 }
                             }
+                        }
+                    }
+                }
+            }
+
+            // SECTION: AUTOMATIC BACKUP (BACKGROUND)
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("auto_backup_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(CurrencyGold.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Schedule,
+                                        contentDescription = null,
+                                        tint = CurrencyGold,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Column {
+                                    Text(
+                                        text = "AUTO BACKUP",
+                                        color = TextPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp
+                                    )
+                                    Text(
+                                        text = "Automatic scheduled background backup",
+                                        color = TextSecondary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+
+                            Switch(
+                                checked = autoBackupEnabled,
+                                onCheckedChange = { enabled ->
+                                    if (isAuthorized) {
+                                        viewModel.setAutoBackupEnabled(enabled)
+                                    } else {
+                                        Toast.makeText(context, "Unauthorized: Only Managers & Admins can change settings", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                enabled = isAuthorized,
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.Black,
+                                    checkedTrackColor = CurrencyGold,
+                                    uncheckedThumbColor = TextMuted,
+                                    uncheckedTrackColor = DarkSurfaceVariant
+                                ),
+                                modifier = Modifier.testTag("auto_backup_switch")
+                            )
+                        }
+
+                        if (autoBackupEnabled) {
+                            HorizontalDivider(color = DarkSurfaceVariant)
+
+                            // Frequency Selector
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = "Backup Frequency",
+                                    color = TextSecondary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    listOf("Daily", "Weekly").forEach { freq ->
+                                        val isSelected = autoBackupFrequency == freq
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(if (isSelected) CurrencyGold else DarkSurfaceVariant)
+                                                .clickable(enabled = isAuthorized) {
+                                                    viewModel.setAutoBackupFrequency(freq)
+                                                }
+                                                .padding(vertical = 10.dp)
+                                                .testTag("auto_backup_freq_$freq"),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = if (freq == "Daily") "Daily (24h)" else "Weekly (7d)",
+                                                color = if (isSelected) Color.Black else TextSecondary,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Status Info Box
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(DarkBackground)
+                                    .padding(12.dp)
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (lastAutoBackupStatus == "SUCCESS") StatusReady
+                                                    else if (lastAutoBackupStatus == "FAILED") StatusCancelled
+                                                    else CurrencyGold
+                                                )
+                                        )
+                                        Text(
+                                            text = if (lastAutoBackupTime > 0) {
+                                                val sdf = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.US)
+                                                "Last Backup: ${sdf.format(Date(lastAutoBackupTime))}"
+                                            } else {
+                                                "Status: Scheduled (Waiting for trigger)"
+                                            },
+                                            color = TextPrimary,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+
+                                    if (lastAutoBackupError != null) {
+                                        Text(
+                                            text = "Error: $lastAutoBackupError",
+                                            color = StatusCancelled,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+
+                                    Text(
+                                        text = "Saved in app-private storage. Keeps the latest 7 automatic backups.",
+                                        color = TextMuted,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+
+                            // Quick Run Button
+                            OutlinedButton(
+                                onClick = {
+                                    if (isAuthorized) {
+                                        viewModel.runAutoBackupNow()
+                                    }
+                                },
+                                enabled = isAuthorized,
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = CurrencyGold),
+                                border = BorderStroke(1.dp, CurrencyGold.copy(alpha = 0.6f)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth().height(42.dp).testTag("run_auto_backup_now_btn")
+                            ) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = CurrencyGold, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("RUN AUTO BACKUP NOW", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = CurrencyGold)
+                            }
+                        } else {
+                            Text(
+                                text = "Enable Auto Backup to automatically create daily or weekly snapshots of orders, inventory, expenses, and settings without manual exports.",
+                                color = TextMuted,
+                                fontSize = 12.sp
+                            )
                         }
                     }
                 }

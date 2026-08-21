@@ -176,60 +176,71 @@ class RestaurantRepository(
         menuItemDao.updateMenuItem(item)
     }
 
-    suspend fun addItemsToExistingOrder(orderId: Long, cartItems: List<CartItem>) {
-        val newItems = cartItems.map { cartItem ->
-            OrderItemEntity(
-                orderId = orderId,
-                menuItemId = cartItem.menuItem.id,
-                menuItemName = cartItem.menuItem.name,
-                quantity = cartItem.quantity,
-                pricePerUnit = cartItem.menuItem.price,
-                note = cartItem.note,
-                costPriceAtSale = cartItem.menuItem.costPrice
-            )
-        }
-        orderDao.insertOrderItems(newItems)
-        
-        // Recalculate
+    suspend fun addItemsToExistingOrder(orderId: Long, cartItems: List<CartItem>, activeTaxRate: Double? = null) {
         val orderWithItems = orderDao.getOrderById(orderId) ?: return
         val order = orderWithItems.order
-        
-        // Recalculate Subtotal
-        val newSubtotal = orderWithItems.items.sumOf { it.pricePerUnit * it.quantity }
-        
-        // Product Discount
-        val newProductDiscount = orderWithItems.items.sumOf { item ->
-            // I need to fetch MenuItemEntity again to get discount info
-            val menuItem = menuItemDao.getMenuItemById(item.menuItemId) ?: return@sumOf 0.0
-            if (menuItem.discountEnabled) {
-                if (menuItem.discountType == "PERCENTAGE") {
-                    (menuItem.price * (menuItem.discountValue / 100.0)) * item.quantity
-                } else {
-                    menuItem.discountValue * item.quantity
-                }
-            } else 0.0
+        val existingItems = orderWithItems.items.toMutableList()
+
+        for (cartItem in cartItems) {
+            val matchingIndex = existingItems.indexOfFirst {
+                it.menuItemId == cartItem.menuItem.id && it.note == cartItem.note
+            }
+            if (matchingIndex >= 0) {
+                val existing = existingItems[matchingIndex]
+                val updated = existing.copy(quantity = existing.quantity + cartItem.quantity)
+                orderDao.insertOrderItems(listOf(updated))
+                existingItems[matchingIndex] = updated
+            } else {
+                val newItem = OrderItemEntity(
+                    orderId = orderId,
+                    menuItemId = cartItem.menuItem.id,
+                    menuItemName = cartItem.menuItem.name,
+                    quantity = cartItem.quantity,
+                    pricePerUnit = cartItem.menuItem.price,
+                    note = cartItem.note,
+                    costPriceAtSale = cartItem.menuItem.costPrice
+                )
+                orderDao.insertOrderItems(listOf(newItem))
+                existingItems.add(newItem)
+            }
         }
-        
-        // Total discount = product discount + order manual discount?
-        // Wait, order.discount is just "discount".
-        // If the user adds items, and the order has a manual discount (e.g., 50 taka off), 
-        // that's independent of product discount.
-        
-        // Total Discount
-        val totalDiscount = newProductDiscount + order.discount // This assumes order.discount was for the old subtotal?
-        // If I update the subtotal, the old "manual" discount is still valid.
-        
-        // Tax
-        // OrderEntity doesn't store taxRate. Tax is calculated based on subtotal * taxRate.
-        // Wait, I need the tax rate.
-        
-        // I will take a simpler approach:
-        // Keep order.discount and order.tax as they are and just update subtotal, total.
-        // No, that's not what the user wants.
-        
-        // Let's assume for now, just update the subtotal and total.
-        
-        orderDao.insertOrder(order.copy(subtotal = newSubtotal, total = newSubtotal - order.discount + order.tax))
+
+        // Recalculate Subtotal from all items in this order
+        val refreshedOrderWithItems = orderDao.getOrderById(orderId) ?: return
+        val newSubtotal = refreshedOrderWithItems.items.sumOf { it.pricePerUnit * it.quantity }
+
+        // Recalculate Discount according to existing discount rate
+        val discountRate = if (order.subtotal > 0.0 && order.discount > 0.0) {
+            order.discount / order.subtotal
+        } else {
+            0.0
+        }
+        val newDiscount = if (discountRate > 0.0) {
+            newSubtotal * discountRate
+        } else {
+            order.discount
+        }
+
+        // Recalculate Tax using existing tax rate or active tax rate setting
+        val taxRate = activeTaxRate ?: if (order.subtotal > 0.0 && order.tax > 0.0) {
+            val netOld = (order.subtotal - order.discount).coerceAtLeast(1.0)
+            (order.tax / netOld) * 100.0
+        } else {
+            0.0
+        }
+
+        val netAmount = (newSubtotal - newDiscount).coerceAtLeast(0.0)
+        val newTax = if (taxRate > 0.0) netAmount * (taxRate / 100.0) else 0.0
+        val newTotal = (netAmount + newTax).coerceAtLeast(0.0)
+
+        orderDao.insertOrder(
+            order.copy(
+                subtotal = newSubtotal,
+                discount = newDiscount,
+                tax = newTax,
+                total = newTotal
+            )
+        )
     }
 
     suspend fun saveCategory(category: CategoryEntity): Long {

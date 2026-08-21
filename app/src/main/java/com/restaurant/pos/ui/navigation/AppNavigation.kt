@@ -153,6 +153,9 @@ fun AppNavigation(
                 },
                 onBack = {
                     navController.popBackStack()
+                },
+                onOrderUpdated = {
+                    navController.popBackStack(Routes.ORDER_DETAILS, false)
                 }
             )
         }
