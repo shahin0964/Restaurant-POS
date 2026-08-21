@@ -11,7 +11,10 @@ import com.restaurant.pos.data.db.SyncRecordDao
 import com.restaurant.pos.data.db.SyncRecordEntity
 import com.restaurant.pos.data.db.UserDao
 import com.restaurant.pos.data.db.UserEntity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -29,6 +32,8 @@ class AuthRepository(
 
     private val firestore: FirebaseFirestore
         get() = FirebaseFirestore.getInstance()
+
+    private val authScope = CoroutineScope(Dispatchers.IO)
 
     suspend fun seedDefaultUserIfNeeded() {
         // No fake / mock accounts are created.
@@ -53,41 +58,48 @@ class AuthRepository(
             return localUser.copy(isCurrentSession = true)
         }
 
-        // If local user is missing but Firebase session is valid, fetch profile from Firestore with timeout
-        return try {
-            val firestoreUserDoc = withTimeoutOrNull(3000L) {
-                firestore.collection("users").document(fbUser.uid).get().await()
+        // If local user is missing but Firebase session is valid, construct local user immediately and sync in background
+        val defaultPerms = com.restaurant.pos.data.model.AppPermission.allKeys().joinToString(",")
+        val newUser = UserEntity(
+            emailOrPhone = fbUser.email ?: "",
+            name = fbUser.displayName ?: "User",
+            role = "Administrator",
+            passwordHash = "",
+            firebaseUid = fbUser.uid,
+            isCurrentSession = true,
+            isActive = true,
+            permissions = defaultPerms
+        )
+        val newId = userDao.insertUser(newUser)
+        userDao.clearCurrentSessions()
+        userDao.setCurrentSession(newId)
+        val savedUser = newUser.copy(id = newId)
+
+        // Asynchronously fetch remote profile to update role/permissions if present in Firestore
+        authScope.launch {
+            try {
+                val firestoreUserDoc = firestore.collection("users").document(fbUser.uid).get().await()
+                if (firestoreUserDoc != null && firestoreUserDoc.exists()) {
+                    val remoteRole = firestoreUserDoc.getString("role") ?: savedUser.role
+                    val remoteName = firestoreUserDoc.getString("name") ?: savedUser.name
+                    val remotePermissions = when (val p = firestoreUserDoc.get("permissions")) {
+                        is String -> p
+                        is List<*> -> p.filterIsInstance<String>().joinToString(",")
+                        else -> null
+                    }
+                    val updated = savedUser.copy(
+                        name = remoteName,
+                        role = remoteRole,
+                        permissions = remotePermissions ?: savedUser.permissions
+                    )
+                    userDao.updateUser(updated)
+                }
+            } catch (e: Exception) {
+                Log.w("AuthRepository", "Background profile refresh on restore encountered error: ${e.message}")
             }
-            val remoteRole = firestoreUserDoc?.getString("role") ?: "Administrator"
-            val remoteName = firestoreUserDoc?.getString("name") ?: (fbUser.displayName ?: "User")
-            val remotePermissions = when (val p = firestoreUserDoc?.get("permissions")) {
-                is String -> p
-                is List<*> -> p.filterIsInstance<String>().joinToString(",")
-                else -> null
-            }
-            val defaultPerms = if (remoteRole.equals("Administrator", true) || remoteRole.equals("Admin", true)) {
-                com.restaurant.pos.data.model.AppPermission.allKeys().joinToString(",")
-            } else {
-                com.restaurant.pos.data.model.UserRole.fromRoleName(remoteRole).defaultPermissions.joinToString(",")
-            }
-            val newUser = UserEntity(
-                emailOrPhone = fbUser.email ?: "",
-                name = remoteName,
-                role = remoteRole,
-                passwordHash = "",
-                firebaseUid = fbUser.uid,
-                isCurrentSession = true,
-                isActive = true,
-                permissions = remotePermissions ?: defaultPerms
-            )
-            val newId = userDao.insertUser(newUser)
-            userDao.clearCurrentSessions()
-            userDao.setCurrentSession(newId)
-            newUser.copy(id = newId)
-        } catch (e: Exception) {
-            Log.e("AuthRepository", "Failed to restore user from Firestore on startup: ${e.message}")
-            null
         }
+
+        return savedUser
     }
 
     /**
@@ -118,52 +130,20 @@ class AuthRepository(
             val authResult = firebaseAuth.signInWithEmailAndPassword(trimmedEmail, password).await()
             val firebaseUser = authResult.user ?: throw Exception("Authentication failed, user is null")
 
-            // Fetch user record from Firestore if it exists (with timeout protection)
-            val firestoreUserDoc = try {
-                withTimeoutOrNull(3000L) {
-                    firestore.collection("users").document(firebaseUser.uid).get().await()
-                }
-            } catch (e: Exception) {
-                null
-            }
-
-            val remoteRole = firestoreUserDoc?.getString("role")
-            val remoteName = firestoreUserDoc?.getString("name")
-            val remoteIsActive = firestoreUserDoc?.getBoolean("isActive") ?: true
-            val remotePermissions = when (val p = firestoreUserDoc?.get("permissions")) {
-                is String -> p
-                is List<*> -> p.filterIsInstance<String>().joinToString(",")
-                else -> null
-            }
-
-            if (!remoteIsActive) {
-                firebaseAuth.signOut()
-                return Result.failure(Exception("This staff account is inactive. Please contact your Administrator."))
-            }
-
             var localUser = userDao.getUserByFirebaseUid(firebaseUser.uid)
                 ?: userDao.getUserByEmailOrPhone(firebaseUser.email ?: trimmedEmail)
 
             if (localUser == null) {
-                val assignedRole = if (remoteRole != null) {
-                    remoteRole
-                } else {
-                    "Administrator"
-                }
-                val defaultPerms = if (assignedRole.equals("Administrator", true) || assignedRole.equals("Admin", true)) {
-                    com.restaurant.pos.data.model.AppPermission.allKeys().joinToString(",")
-                } else {
-                    com.restaurant.pos.data.model.UserRole.fromRoleName(assignedRole).defaultPermissions.joinToString(",")
-                }
+                val defaultPerms = com.restaurant.pos.data.model.AppPermission.allKeys().joinToString(",")
                 localUser = UserEntity(
                     emailOrPhone = firebaseUser.email ?: trimmedEmail,
-                    name = remoteName ?: (firebaseUser.displayName ?: "User"),
-                    role = assignedRole,
+                    name = firebaseUser.displayName ?: "User",
+                    role = "Administrator",
                     passwordHash = "",
                     firebaseUid = firebaseUser.uid,
                     isCurrentSession = true,
                     isActive = true,
-                    permissions = remotePermissions ?: defaultPerms
+                    permissions = defaultPerms
                 )
                 val newId = userDao.insertUser(localUser)
                 localUser = localUser.copy(id = newId)
@@ -172,55 +152,69 @@ class AuthRepository(
                     firebaseAuth.signOut()
                     return Result.failure(Exception("This staff account is inactive. Please contact your Administrator."))
                 }
-                val finalRole = remoteRole ?: localUser.role
-                val finalName = remoteName ?: (firebaseUser.displayName ?: localUser.name)
-                val finalPermissions = remotePermissions ?: if (localUser.permissions.isNotBlank()) {
-                    localUser.permissions
-                } else {
-                    if (finalRole.equals("Administrator", true) || finalRole.equals("Admin", true)) {
-                        com.restaurant.pos.data.model.AppPermission.allKeys().joinToString(",")
-                    } else {
-                        com.restaurant.pos.data.model.UserRole.fromRoleName(finalRole).defaultPermissions.joinToString(",")
-                    }
-                }
                 localUser = localUser.copy(
-                    name = finalName,
-                    role = finalRole,
                     firebaseUid = firebaseUser.uid,
                     isCurrentSession = true,
-                    isActive = true,
-                    permissions = finalPermissions
+                    isActive = true
                 )
                 userDao.updateUser(localUser)
             }
 
-            // Sync user profile to Firestore (with safe timeout so it never blocks login)
-            try {
-                val userDocMap = mapOf(
-                    "id" to localUser.id,
-                    "name" to localUser.name,
-                    "emailOrPhone" to localUser.emailOrPhone,
-                    "role" to localUser.role,
-                    "firebaseUid" to firebaseUser.uid,
-                    "isActive" to true,
-                    "permissions" to localUser.permissions,
-                    "isCurrentSession" to false,
-                    "_lastUpdated" to System.currentTimeMillis()
-                )
-                withTimeoutOrNull(3000L) {
+            userDao.clearCurrentSessions()
+            userDao.setCurrentSession(localUser.id)
+            updateSyncRecordWithUid(localUser.id, firebaseUser.uid)
+
+            val sessionUser = localUser.copy(isCurrentSession = true)
+
+            // Sync user profile to/from Firestore asynchronously in the background so login is never blocked
+            authScope.launch {
+                try {
+                    // Check remote doc for any updated permissions or role
+                    val firestoreUserDoc = try {
+                        firestore.collection("users").document(firebaseUser.uid).get().await()
+                    } catch (e: Exception) {
+                        null
+                    }
+
+                    val remoteRole = firestoreUserDoc?.getString("role")
+                    val remoteName = firestoreUserDoc?.getString("name")
+                    val remotePermissions = when (val p = firestoreUserDoc?.get("permissions")) {
+                        is String -> p
+                        is List<*> -> p.filterIsInstance<String>().joinToString(",")
+                        else -> null
+                    }
+
+                    val finalRole = remoteRole ?: sessionUser.role
+                    val finalName = remoteName ?: (firebaseUser.displayName ?: sessionUser.name)
+                    val finalPermissions = remotePermissions ?: sessionUser.permissions
+
+                    val updatedUser = sessionUser.copy(
+                        name = finalName,
+                        role = finalRole,
+                        permissions = finalPermissions
+                    )
+                    userDao.updateUser(updatedUser)
+
+                    val userDocMap = mapOf(
+                        "id" to updatedUser.id,
+                        "name" to updatedUser.name,
+                        "emailOrPhone" to updatedUser.emailOrPhone,
+                        "role" to updatedUser.role,
+                        "firebaseUid" to firebaseUser.uid,
+                        "isActive" to true,
+                        "permissions" to updatedUser.permissions,
+                        "isCurrentSession" to false,
+                        "_lastUpdated" to System.currentTimeMillis()
+                    )
                     firestore.collection("users").document(firebaseUser.uid)
                         .set(userDocMap, SetOptions.merge())
                         .await()
+                } catch (e: Exception) {
+                    Log.e("AuthRepository", "Failed to sync user document to Firestore in background", e)
                 }
-            } catch (e: Exception) {
-                Log.e("AuthRepository", "Failed to sync user document to Firestore on login", e)
             }
 
-            updateSyncRecordWithUid(localUser.id, firebaseUser.uid)
-            userDao.clearCurrentSessions()
-            userDao.setCurrentSession(localUser.id)
-
-            Result.success(localUser.copy(isCurrentSession = true))
+            Result.success(sessionUser)
         } catch (e: Exception) {
             Result.failure(mapAuthException(e))
         }
@@ -235,41 +229,20 @@ class AuthRepository(
             val email = firebaseUser.email ?: throw Exception("Google account must have an email")
             val displayName = firebaseUser.displayName ?: "Google User"
 
-            // Check Firestore doc (with timeout protection)
-            val firestoreUserDoc = try {
-                withTimeoutOrNull(3000L) {
-                    firestore.collection("users").document(firebaseUser.uid).get().await()
-                }
-            } catch (e: Exception) {
-                null
-            }
-
-            val remoteRole = firestoreUserDoc?.getString("role")
-            val remoteName = firestoreUserDoc?.getString("name")
-            val remoteIsActive = firestoreUserDoc?.getBoolean("isActive") ?: true
-
-            if (!remoteIsActive) {
-                firebaseAuth.signOut()
-                return Result.failure(Exception("This staff account is inactive. Please contact your Administrator."))
-            }
-
             var localUser = userDao.getUserByFirebaseUid(firebaseUser.uid)
                 ?: userDao.getUserByEmailOrPhone(email)
 
             if (localUser == null) {
-                val assignedRole = if (remoteRole != null) {
-                    remoteRole
-                } else {
-                    "Administrator"
-                }
+                val defaultPerms = com.restaurant.pos.data.model.AppPermission.allKeys().joinToString(",")
                 localUser = UserEntity(
                     emailOrPhone = email,
-                    name = remoteName ?: displayName,
-                    role = assignedRole,
+                    name = displayName,
+                    role = "Administrator",
                     passwordHash = "",
                     firebaseUid = firebaseUser.uid,
                     isCurrentSession = true,
-                    isActive = true
+                    isActive = true,
+                    permissions = defaultPerms
                 )
                 val newId = userDao.insertUser(localUser)
                 localUser = localUser.copy(id = newId)
@@ -278,11 +251,8 @@ class AuthRepository(
                     firebaseAuth.signOut()
                     return Result.failure(Exception("This staff account is inactive. Please contact your Administrator."))
                 }
-                val finalRole = remoteRole ?: localUser.role
-                val finalName = remoteName ?: (displayName.ifBlank { localUser.name })
                 localUser = localUser.copy(
-                    name = finalName,
-                    role = finalRole,
+                    name = displayName.ifBlank { localUser.name },
                     firebaseUid = firebaseUser.uid,
                     isCurrentSession = true,
                     isActive = true
@@ -290,32 +260,60 @@ class AuthRepository(
                 userDao.updateUser(localUser)
             }
 
-            // Sync user profile to Firestore (with safe timeout so it never blocks login)
-            try {
-                val userDocMap = mapOf(
-                    "id" to localUser.id,
-                    "name" to localUser.name,
-                    "emailOrPhone" to localUser.emailOrPhone,
-                    "role" to localUser.role,
-                    "firebaseUid" to firebaseUser.uid,
-                    "isActive" to true,
-                    "isCurrentSession" to false,
-                    "_lastUpdated" to System.currentTimeMillis()
-                )
-                withTimeoutOrNull(3000L) {
+            userDao.clearCurrentSessions()
+            userDao.setCurrentSession(localUser.id)
+            updateSyncRecordWithUid(localUser.id, firebaseUser.uid)
+
+            val sessionUser = localUser.copy(isCurrentSession = true)
+
+            // Sync user profile to/from Firestore asynchronously in the background so login is never blocked
+            authScope.launch {
+                try {
+                    val firestoreUserDoc = try {
+                        firestore.collection("users").document(firebaseUser.uid).get().await()
+                    } catch (e: Exception) {
+                        null
+                    }
+
+                    val remoteRole = firestoreUserDoc?.getString("role")
+                    val remoteName = firestoreUserDoc?.getString("name")
+                    val remotePermissions = when (val p = firestoreUserDoc?.get("permissions")) {
+                        is String -> p
+                        is List<*> -> p.filterIsInstance<String>().joinToString(",")
+                        else -> null
+                    }
+
+                    val finalRole = remoteRole ?: sessionUser.role
+                    val finalName = remoteName ?: (displayName.ifBlank { sessionUser.name })
+                    val finalPermissions = remotePermissions ?: sessionUser.permissions
+
+                    val updatedUser = sessionUser.copy(
+                        name = finalName,
+                        role = finalRole,
+                        permissions = finalPermissions
+                    )
+                    userDao.updateUser(updatedUser)
+
+                    val userDocMap = mapOf(
+                        "id" to updatedUser.id,
+                        "name" to updatedUser.name,
+                        "emailOrPhone" to updatedUser.emailOrPhone,
+                        "role" to updatedUser.role,
+                        "firebaseUid" to firebaseUser.uid,
+                        "isActive" to true,
+                        "permissions" to updatedUser.permissions,
+                        "isCurrentSession" to false,
+                        "_lastUpdated" to System.currentTimeMillis()
+                    )
                     firestore.collection("users").document(firebaseUser.uid)
                         .set(userDocMap, SetOptions.merge())
                         .await()
+                } catch (e: Exception) {
+                    Log.e("AuthRepository", "Failed to sync Google user document to Firestore in background", e)
                 }
-            } catch (e: Exception) {
-                Log.e("AuthRepository", "Failed to sync Google user document to Firestore", e)
             }
 
-            updateSyncRecordWithUid(localUser.id, firebaseUser.uid)
-            userDao.clearCurrentSessions()
-            userDao.setCurrentSession(localUser.id)
-
-            Result.success(localUser.copy(isCurrentSession = true))
+            Result.success(sessionUser)
         } catch (e: Exception) {
             Result.failure(mapAuthException(e))
         }

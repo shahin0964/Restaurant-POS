@@ -120,21 +120,28 @@ class CloudSyncManager(
         if (!isOnline) return Result.failure(Exception("Internet unavailable. Cloud Backup requires an active connection."))
         if (!isAuthenticated()) return Result.failure(Exception("Unauthenticated: Please login to Firebase to backup."))
 
-        return try {
-            withTimeout(20000L) {
-                syncMutex.withLock {
-                    Log.d("CloudSyncManager", "Starting manual cloud backup...")
-                    ensureAllEntitiesTracked()
-                    pushLocalChangesToFirestore()
-                    Result.success("Cloud Backup completed successfully.")
-                }
+        val mutexAcquired = try {
+            withTimeout(15000L) {
+                syncMutex.lock()
+                true
             }
         } catch (e: TimeoutCancellationException) {
-            Log.e("CloudSyncManager", "Manual backup timed out waiting for active sync")
-            Result.failure(Exception("Backup operation timed out waiting for active sync. Please try again."))
+            Log.e("CloudSyncManager", "Manual backup timed out waiting for active sync mutex")
+            return Result.failure(Exception("Backup operation timed out waiting for active sync. Please try again."))
+        }
+
+        return try {
+            Log.d("CloudSyncManager", "Starting manual cloud backup...")
+            ensureAllEntitiesTracked()
+            pushLocalChangesToFirestore()
+            Result.success("Cloud Backup completed successfully.")
         } catch (e: Exception) {
             Log.e("CloudSyncManager", "Manual backup failed: ${e.message}")
             Result.failure(e)
+        } finally {
+            if (mutexAcquired) {
+                syncMutex.unlock()
+            }
         }
     }
 
@@ -142,22 +149,29 @@ class CloudSyncManager(
         if (!isOnline) return Result.failure(Exception("Internet unavailable. Cloud Restore requires an active connection."))
         if (!isAuthenticated()) return Result.failure(Exception("Unauthenticated: Please login to Firebase to restore."))
 
-        return try {
-            withTimeout(25000L) {
-                syncMutex.withLock {
-                    Log.d("CloudSyncManager", "Starting manual cloud restore...")
-                    // Clear cursors to force a full incremental pull
-                    clearAllSyncCursors()
-                    pullRemoteChangesFromFirestore()
-                    Result.success("Cloud Restore completed successfully.")
-                }
+        val mutexAcquired = try {
+            withTimeout(15000L) {
+                syncMutex.lock()
+                true
             }
         } catch (e: TimeoutCancellationException) {
-            Log.e("CloudSyncManager", "Manual restore timed out waiting for active sync")
-            Result.failure(Exception("Restore operation timed out waiting for active sync. Please try again."))
+            Log.e("CloudSyncManager", "Manual restore timed out waiting for active sync mutex")
+            return Result.failure(Exception("Restore operation timed out waiting for active sync. Please try again."))
+        }
+
+        return try {
+            Log.d("CloudSyncManager", "Starting manual cloud restore...")
+            // Clear cursors to force a full incremental pull
+            clearAllSyncCursors()
+            pullRemoteChangesFromFirestore()
+            Result.success("Cloud Restore completed successfully.")
         } catch (e: Exception) {
             Log.e("CloudSyncManager", "Manual restore failed: ${e.message}")
             Result.failure(e)
+        } finally {
+            if (mutexAcquired) {
+                syncMutex.unlock()
+            }
         }
     }
 
