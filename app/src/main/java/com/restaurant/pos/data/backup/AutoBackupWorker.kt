@@ -1,9 +1,13 @@
 package com.restaurant.pos.data.backup
 
 import android.content.Context
+import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.google.firebase.auth.FirebaseAuth
 import com.restaurant.pos.data.db.AppDatabase
+import com.restaurant.pos.data.network.NetworkConnectivityObserver
+import com.restaurant.pos.data.sync.CloudSyncManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -25,7 +29,21 @@ class AutoBackupWorker(
             val database = AppDatabase.getInstance(appContext)
             val backupManager = BackupManager(appContext, database)
 
+            // Local auto backup
             val result = backupManager.createAutoBackup()
+
+            // Also trigger Cloud Backup to Firestore if authenticated (Internet Billing Manager architecture)
+            val auth = FirebaseAuth.getInstance()
+            if (auth.currentUser != null) {
+                try {
+                    val networkObserver = NetworkConnectivityObserver(appContext)
+                    val cloudSyncManager = CloudSyncManager(appContext, database, networkObserver)
+                    cloudSyncManager.performManualBackup()
+                    Log.d("AutoBackupWorker", "Cloud auto-sync completed successfully during periodic backup.")
+                } catch (e: Exception) {
+                    Log.w("AutoBackupWorker", "Cloud sync encountered error during auto-backup: ${e.message}")
+                }
+            }
 
             when (result) {
                 is BackupResult.Success -> {
@@ -69,5 +87,6 @@ class AutoBackupWorker(
 
     companion object {
         const val UNIQUE_WORK_NAME = "restaurant_pos_auto_backup"
+        const val UNIQUE_ONE_TIME_WORK_NAME = "restaurant_pos_auto_backup_immediate"
     }
 }

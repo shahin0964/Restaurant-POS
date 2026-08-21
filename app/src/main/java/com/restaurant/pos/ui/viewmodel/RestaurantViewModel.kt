@@ -1165,6 +1165,16 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             _backupOperationState.value = BackupOpState.Progress("Running automatic backup...")
             val result = backupManager.createAutoBackup()
+
+            val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+            if (auth.currentUser != null) {
+                try {
+                    cloudSyncManager.performManualBackup()
+                } catch (e: Exception) {
+                    android.util.Log.w("RestaurantViewModel", "Cloud sync during runAutoBackupNow: ${e.message}")
+                }
+            }
+
             when (result) {
                 is BackupResult.Success -> {
                     val prefs = getApplication<Application>().getSharedPreferences("pos_backup_prefs", Context.MODE_PRIVATE)
