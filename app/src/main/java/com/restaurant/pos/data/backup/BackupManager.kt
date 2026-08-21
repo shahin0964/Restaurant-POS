@@ -26,6 +26,13 @@ data class BackupFileInfo(
     val timestamp: Long
 )
 
+data class AppSettingsBackupData(
+    val language: String = "en",
+    val appTheme: String = "system",
+    val openingCash: String = "0.0",
+    val notificationCategories: Map<String, Boolean> = emptyMap()
+)
+
 data class ParsedBackupData(
     val categories: List<CategoryEntity>,
     val menuItems: List<MenuItemEntity>,
@@ -37,6 +44,11 @@ data class ParsedBackupData(
     val receiptSetting: ReceiptSettingEntity?,
     val printerSetting: PrinterSettingEntity?,
     val users: List<UserEntity>,
+    val tables: List<TableEntity>,
+    val notifications: List<NotificationEntity>,
+    val staffFood: List<StaffFoodEntity>,
+    val syncRecords: List<SyncRecordEntity>,
+    val appSettings: AppSettingsBackupData? = null,
     val recordSummary: String,
     val timestamp: Long
 )
@@ -67,6 +79,45 @@ class BackupManager(
         val summary: String
     )
 
+    private fun encodeFileToBase64(pathOrUri: String?): String? {
+        if (pathOrUri.isNullOrBlank()) return null
+        if (pathOrUri.startsWith("http://") || pathOrUri.startsWith("https://") || pathOrUri.startsWith("gs://")) {
+            return null
+        }
+        return try {
+            val cleanPath = if (pathOrUri.startsWith("file://")) pathOrUri.removePrefix("file://") else pathOrUri
+            val file = File(cleanPath)
+            if (file.exists() && file.isFile) {
+                val bytes = file.readBytes()
+                if (bytes.isNotEmpty()) {
+                    android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                } else null
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun decodeBase64ToFile(base64Str: String?, subDir: String, fileNamePrefix: String): String? {
+        if (base64Str.isNullOrBlank()) return null
+        return try {
+            val bytes = android.util.Base64.decode(base64Str, android.util.Base64.NO_WRAP)
+            if (bytes.isNotEmpty()) {
+                val dir = File(context.filesDir, subDir).apply { if (!exists()) mkdirs() }
+                val file = File(dir, "${fileNamePrefix}_${System.currentTimeMillis()}.jpg")
+                FileOutputStream(file).use { out ->
+                    out.write(bytes)
+                    out.flush()
+                }
+                if (file.exists() && file.length() > 0) {
+                    file.absolutePath
+                } else null
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private suspend fun generateBackupPayload(): GeneratedBackup {
         val categories = database.categoryDao().getAllCategoriesSync()
         val menuItems = database.menuItemDao().getAllMenuItemsSync()
@@ -78,6 +129,13 @@ class BackupManager(
         val receiptSetting = database.receiptSettingDao().getReceiptSettingSync() ?: ReceiptSettingEntity()
         val printerSetting = database.printerSettingDao().getPrinterSettingSync() ?: PrinterSettingEntity()
         val users = database.userDao().getAllUsersSync()
+        val tables = database.tableDao().getAllTablesSync()
+        val notifications = database.notificationDao().getAllNotificationsSync()
+        val staffFood = database.staffFoodDao().getAllStaffFoodSync()
+        val syncRecords = database.syncRecordDao().getAllSyncRecordsSync()
+
+        val appPrefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+        val notifPrefs = context.getSharedPreferences("notification_settings", Context.MODE_PRIVATE)
 
         val now = System.currentTimeMillis()
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
@@ -88,7 +146,7 @@ class BackupManager(
             put("appName", "Restaurant POS")
             put("packageName", context.packageName)
             put("appVersion", com.restaurant.pos.BuildConfig.VERSION_NAME)
-            put("dbVersion", 8)
+            put("dbVersion", 19)
             put("timestamp", now)
             put("createdAt", formattedDate)
 
@@ -101,6 +159,10 @@ class BackupManager(
                 put("stockLogs", stockLogs.size)
                 put("offers", offers.size)
                 put("users", users.size)
+                put("tables", tables.size)
+                put("notifications", notifications.size)
+                put("staffFood", staffFood.size)
+                put("syncRecords", syncRecords.size)
                 put("receiptSetting", 1)
                 put("printerSetting", 1)
             }
@@ -116,6 +178,8 @@ class BackupManager(
                         put("itemCount", cat.itemCount)
                         put("iconName", cat.iconName)
                         put("imageUrl", cat.imageUrl)
+                        val b64 = encodeFileToBase64(cat.imageUrl)
+                        if (b64 != null) put("imageBase64", b64)
                     })
                 }
             })
@@ -134,6 +198,12 @@ class BackupManager(
                         put("stockQuantity", item.stockQuantity)
                         put("unit", item.unit)
                         put("lowStockThreshold", item.lowStockThreshold)
+                        put("costPrice", item.costPrice)
+                        put("discountEnabled", item.discountEnabled)
+                        put("discountValue", item.discountValue)
+                        put("discountType", item.discountType)
+                        val b64 = encodeFileToBase64(item.imageUrl)
+                        if (b64 != null) put("imageBase64", b64)
                     })
                 }
             })
@@ -170,6 +240,7 @@ class BackupManager(
                         put("pricePerUnit", item.pricePerUnit)
                         put("quantity", item.quantity)
                         put("note", item.note)
+                        put("costPriceAtSale", item.costPriceAtSale)
                     })
                 }
             })
@@ -183,6 +254,8 @@ class BackupManager(
                         put("category", exp.category)
                         put("note", exp.note)
                         put("timestamp", exp.timestamp)
+                        put("paymentMethod", exp.paymentMethod)
+                        put("expenseType", exp.expenseType)
                     })
                 }
             })
@@ -224,10 +297,66 @@ class BackupManager(
                         put("emailOrPhone", u.emailOrPhone)
                         put("name", u.name)
                         put("role", u.role)
-                        // PROTECTED: Do not export passwords or secrets in plain text
-                        put("passwordHash", "[PROTECTED]")
-                        put("isCurrentSession", false)
+                        put("passwordHash", u.passwordHash)
+                        put("firebaseUid", u.firebaseUid ?: JSONObject.NULL)
+                        put("isCurrentSession", u.isCurrentSession)
                         put("isActive", u.isActive)
+                        put("permissions", u.permissions)
+                    })
+                }
+            })
+
+            put("tables", JSONArray().apply {
+                tables.forEach { tbl ->
+                    put(JSONObject().apply {
+                        put("id", tbl.id)
+                        put("name", tbl.name)
+                        put("capacity", tbl.capacity)
+                        put("isActive", tbl.isActive)
+                        put("accountId", tbl.accountId)
+                    })
+                }
+            })
+
+            put("notifications", JSONArray().apply {
+                notifications.forEach { notif ->
+                    put(JSONObject().apply {
+                        put("id", notif.id)
+                        put("type", notif.type)
+                        put("title", notif.title)
+                        put("message", notif.message)
+                        put("targetId", notif.targetId ?: JSONObject.NULL)
+                        put("timestamp", notif.timestamp)
+                        put("isRead", notif.isRead)
+                    })
+                }
+            })
+
+            put("staffFood", JSONArray().apply {
+                staffFood.forEach { sf ->
+                    put(JSONObject().apply {
+                        put("id", sf.id)
+                        put("staffName", sf.staffName)
+                        put("productName", sf.productName)
+                        put("quantity", sf.quantity)
+                        put("unitPrice", sf.unitPrice)
+                        put("totalPrice", sf.totalPrice)
+                        put("timestamp", sf.timestamp)
+                    })
+                }
+            })
+
+            put("syncRecords", JSONArray().apply {
+                syncRecords.forEach { sync ->
+                    put(JSONObject().apply {
+                        put("id", sync.id)
+                        put("tableName", sync.tableName)
+                        put("localId", sync.localId)
+                        put("firestoreId", sync.firestoreId)
+                        put("lastSyncTime", sync.lastSyncTime)
+                        put("pendingSync", sync.pendingSync)
+                        put("operation", sync.operation)
+                        put("isDeleted", sync.isDeleted)
                     })
                 }
             })
@@ -262,6 +391,8 @@ class BackupManager(
                 put("showTotal", receiptSetting.showTotal)
                 put("showPaymentStatus", receiptSetting.showPaymentStatus)
                 put("showFooter", receiptSetting.showFooter)
+                val b64 = encodeFileToBase64(receiptSetting.logoUri)
+                if (b64 != null) put("logoBase64", b64)
             })
 
             put("printerSetting", JSONObject().apply {
@@ -277,6 +408,20 @@ class BackupManager(
                 put("printerType", printerSetting.printerType)
                 put("bluetoothAddress", printerSetting.bluetoothAddress)
             })
+
+            val notifCategoryKeys = listOf("notify_new_order", "notify_low_stock", "notify_out_of_stock", "notify_payment", "notify_order_ready", "notify_general")
+            val notifObj = JSONObject().apply {
+                notifCategoryKeys.forEach { key ->
+                    put(key, notifPrefs.getBoolean(key, true))
+                }
+            }
+
+            put("appSettings", JSONObject().apply {
+                put("language", appPrefs.getString("language", "en") ?: "en")
+                put("app_theme", appPrefs.getString("app_theme", "system") ?: "system")
+                put("opening_cash", appPrefs.getString("opening_cash", "0.0") ?: "0.0")
+                put("notificationCategories", notifObj)
+            })
         }
 
         val rootObj = JSONObject().apply {
@@ -285,7 +430,7 @@ class BackupManager(
         }
 
         val jsonBytes = rootObj.toString(2).toByteArray(Charsets.UTF_8)
-        val summary = "${menuItems.size} Menu Items, ${orders.size} Orders, ${expenses.size} Expenses, ${categories.size} Categories"
+        val summary = "${menuItems.size} Menu Items, ${orders.size} Orders, ${expenses.size} Expenses, ${categories.size} Categories, ${tables.size} Tables"
 
         return GeneratedBackup(
             jsonBytes = jsonBytes,
@@ -425,7 +570,7 @@ class BackupManager(
                 return ValidationResult.Error("Invalid or incompatible backup: Unsupported backup format version ($backupVer).")
             }
 
-            if (dbVer > 8) {
+            if (dbVer > 19) {
                 return ValidationResult.Error("Invalid or incompatible backup: Backup was created with a newer database version ($dbVer).")
             }
 
@@ -437,13 +582,19 @@ class BackupManager(
                 val catArray = dataObj.getJSONArray("categories")
                 for (i in 0 until catArray.length()) {
                     val o = catArray.getJSONObject(i)
+                    val rawUrl = o.optString("imageUrl", "")
+                    val base64Img = o.optString("imageBase64", "")
+                    val restoredPath = if (base64Img.isNotBlank()) {
+                        decodeBase64ToFile(base64Str = base64Img, subDir = "item_images", fileNamePrefix = "cat_${o.optLong("id", 0L)}") ?: rawUrl
+                    } else rawUrl
+
                     categoriesList.add(
                         CategoryEntity(
                             id = o.optLong("id", 0L),
                             name = o.optString("name", "Category"),
                             itemCount = o.optInt("itemCount", 0),
                             iconName = o.optString("iconName", "burger"),
-                            imageUrl = o.optString("imageUrl", "")
+                            imageUrl = restoredPath
                         )
                     )
                 }
@@ -455,6 +606,12 @@ class BackupManager(
                 val itemArray = dataObj.getJSONArray("menuItems")
                 for (i in 0 until itemArray.length()) {
                     val o = itemArray.getJSONObject(i)
+                    val rawUrl = o.optString("imageUrl", "")
+                    val base64Img = o.optString("imageBase64", "")
+                    val restoredPath = if (base64Img.isNotBlank()) {
+                        decodeBase64ToFile(base64Str = base64Img, subDir = "item_images", fileNamePrefix = "item_${o.optLong("id", 0L)}") ?: rawUrl
+                    } else rawUrl
+
                     menuItemsList.add(
                         MenuItemEntity(
                             id = o.optLong("id", 0L),
@@ -463,11 +620,15 @@ class BackupManager(
                             categoryName = o.optString("categoryName", ""),
                             price = o.optDouble("price", 0.0),
                             description = o.optString("description", ""),
-                            imageUrl = o.optString("imageUrl", ""),
+                            imageUrl = restoredPath,
                             isAvailable = o.optBoolean("isAvailable", true),
                             stockQuantity = o.optInt("stockQuantity", 0),
                             unit = o.optString("unit", "pcs"),
-                            lowStockThreshold = o.optInt("lowStockThreshold", 5)
+                            lowStockThreshold = o.optInt("lowStockThreshold", 5),
+                            costPrice = o.optDouble("costPrice", 0.0),
+                            discountEnabled = o.optBoolean("discountEnabled", false),
+                            discountValue = o.optDouble("discountValue", 0.0),
+                            discountType = o.optString("discountType", "PERCENTAGE")
                         )
                     )
                 }
@@ -515,7 +676,8 @@ class BackupManager(
                             menuItemName = o.optString("menuItemName", ""),
                             pricePerUnit = o.optDouble("pricePerUnit", o.optDouble("price", 0.0)),
                             quantity = o.optInt("quantity", 1),
-                            note = o.optString("note", "")
+                            note = o.optString("note", ""),
+                            costPriceAtSale = o.optDouble("costPriceAtSale", 0.0)
                         )
                     )
                 }
@@ -534,7 +696,9 @@ class BackupManager(
                             amount = o.optDouble("amount", 0.0),
                             category = o.optString("category", "General"),
                             note = o.optString("note", ""),
-                            timestamp = o.optLong("timestamp", System.currentTimeMillis())
+                            timestamp = o.optLong("timestamp", System.currentTimeMillis()),
+                            paymentMethod = o.optString("paymentMethod", "Cash"),
+                            expenseType = o.optString("expenseType", "OPERATING")
                         )
                     )
                 }
@@ -588,15 +752,98 @@ class BackupManager(
                 val uArray = dataObj.getJSONArray("users")
                 for (i in 0 until uArray.length()) {
                     val o = uArray.getJSONObject(i)
+                    val uidStr = if (o.has("firebaseUid") && !o.isNull("firebaseUid")) o.optString("firebaseUid") else null
                     usersList.add(
                         UserEntity(
                             id = o.optLong("id", 0L),
                             emailOrPhone = o.optString("emailOrPhone", ""),
                             name = o.optString("name", "Staff"),
                             role = o.optString("role", "Administrator"),
-                            passwordHash = o.optString("passwordHash", "[PROTECTED]"),
-                            isCurrentSession = false,
-                            isActive = o.optBoolean("isActive", true)
+                            passwordHash = o.optString("passwordHash", ""),
+                            firebaseUid = uidStr,
+                            isCurrentSession = o.optBoolean("isCurrentSession", false),
+                            isActive = o.optBoolean("isActive", true),
+                            permissions = o.optString("permissions", "")
+                        )
+                    )
+                }
+            }
+
+            // Parse Tables
+            val tablesList = mutableListOf<TableEntity>()
+            if (dataObj.has("tables")) {
+                val tblArray = dataObj.getJSONArray("tables")
+                for (i in 0 until tblArray.length()) {
+                    val o = tblArray.getJSONObject(i)
+                    tablesList.add(
+                        TableEntity(
+                            id = o.optLong("id", 0L),
+                            name = o.optString("name", "Table"),
+                            capacity = o.optInt("capacity", 4),
+                            isActive = o.optBoolean("isActive", true),
+                            accountId = o.optString("accountId", "")
+                        )
+                    )
+                }
+            }
+
+            // Parse Notifications
+            val notificationsList = mutableListOf<NotificationEntity>()
+            if (dataObj.has("notifications")) {
+                val notifArray = dataObj.getJSONArray("notifications")
+                for (i in 0 until notifArray.length()) {
+                    val o = notifArray.getJSONObject(i)
+                    val targetIdStr = if (o.has("targetId") && !o.isNull("targetId")) o.optString("targetId") else null
+                    notificationsList.add(
+                        NotificationEntity(
+                            id = o.optLong("id", 0L),
+                            type = o.optString("type", "NEW_ORDER"),
+                            title = o.optString("title", ""),
+                            message = o.optString("message", ""),
+                            targetId = targetIdStr,
+                            timestamp = o.optLong("timestamp", System.currentTimeMillis()),
+                            isRead = o.optBoolean("isRead", false)
+                        )
+                    )
+                }
+            }
+
+            // Parse Staff Food
+            val staffFoodList = mutableListOf<StaffFoodEntity>()
+            if (dataObj.has("staffFood")) {
+                val sfArray = dataObj.getJSONArray("staffFood")
+                for (i in 0 until sfArray.length()) {
+                    val o = sfArray.getJSONObject(i)
+                    staffFoodList.add(
+                        StaffFoodEntity(
+                            id = o.optLong("id", 0L),
+                            staffName = o.optString("staffName", ""),
+                            productName = o.optString("productName", ""),
+                            quantity = o.optInt("quantity", 1),
+                            unitPrice = o.optDouble("unitPrice", 0.0),
+                            totalPrice = o.optDouble("totalPrice", 0.0),
+                            timestamp = o.optLong("timestamp", System.currentTimeMillis())
+                        )
+                    )
+                }
+            }
+
+            // Parse Sync Records
+            val syncRecordsList = mutableListOf<SyncRecordEntity>()
+            if (dataObj.has("syncRecords")) {
+                val srArray = dataObj.getJSONArray("syncRecords")
+                for (i in 0 until srArray.length()) {
+                    val o = srArray.getJSONObject(i)
+                    syncRecordsList.add(
+                        SyncRecordEntity(
+                            id = o.optLong("id", 0L),
+                            tableName = o.optString("tableName", ""),
+                            localId = o.optLong("localId", 0L),
+                            firestoreId = o.optString("firestoreId", ""),
+                            lastSyncTime = o.optLong("lastSyncTime", 0L),
+                            pendingSync = o.optBoolean("pendingSync", true),
+                            operation = o.optString("operation", "INSERT"),
+                            isDeleted = o.optBoolean("isDeleted", false)
                         )
                     )
                 }
@@ -606,6 +853,12 @@ class BackupManager(
             var receiptSetting: ReceiptSettingEntity? = null
             if (dataObj.has("receiptSetting")) {
                 val rs = dataObj.getJSONObject("receiptSetting")
+                val rawLogo = rs.optString("logoUri", "")
+                val logoB64 = rs.optString("logoBase64", "")
+                val restoredLogoPath = if (logoB64.isNotBlank()) {
+                    decodeBase64ToFile(base64Str = logoB64, subDir = "receipt_logos", fileNamePrefix = "logo") ?: rawLogo
+                } else rawLogo
+
                 receiptSetting = ReceiptSettingEntity(
                     id = rs.optInt("id", 1),
                     shopName = rs.optString("shopName", ""),
@@ -613,7 +866,7 @@ class BackupManager(
                     address = rs.optString("address", ""),
                     email = rs.optString("email", ""),
                     website = rs.optString("website", ""),
-                    logoUri = rs.optString("logoUri", ""),
+                    logoUri = restoredLogoPath,
                     footerText = rs.optString("footerText", ""),
                     currencySymbol = rs.optString("currencySymbol", "৳"),
                     currencyCode = rs.optString("currencyCode", "BDT"),
@@ -658,7 +911,31 @@ class BackupManager(
                 )
             }
 
-            val recordSummary = "${menuItemsList.size} Menu Items, ${ordersList.size} Orders, ${expensesList.size} Expenses, ${categoriesList.size} Categories"
+            // Parse App Settings
+            var appSettings: AppSettingsBackupData? = null
+            if (dataObj.has("appSettings")) {
+                val asObj = dataObj.getJSONObject("appSettings")
+                val lang = asObj.optString("language", "en")
+                val theme = asObj.optString("app_theme", "system")
+                val cash = asObj.optString("opening_cash", "0.0")
+                val notifMap = mutableMapOf<String, Boolean>()
+                if (asObj.has("notificationCategories")) {
+                    val ncObj = asObj.getJSONObject("notificationCategories")
+                    val keys = ncObj.keys()
+                    while (keys.hasNext()) {
+                        val k = keys.next()
+                        notifMap[k] = ncObj.optBoolean(k, true)
+                    }
+                }
+                appSettings = AppSettingsBackupData(
+                    language = lang,
+                    appTheme = theme,
+                    openingCash = cash,
+                    notificationCategories = notifMap
+                )
+            }
+
+            val recordSummary = "${menuItemsList.size} Menu Items, ${ordersList.size} Orders, ${expensesList.size} Expenses, ${categoriesList.size} Categories, ${tablesList.size} Tables"
 
             val parsedData = ParsedBackupData(
                 categories = categoriesList,
@@ -671,6 +948,11 @@ class BackupManager(
                 receiptSetting = receiptSetting,
                 printerSetting = printerSetting,
                 users = usersList,
+                tables = tablesList,
+                notifications = notificationsList,
+                staffFood = staffFoodList,
+                syncRecords = syncRecordsList,
+                appSettings = appSettings,
                 recordSummary = recordSummary,
                 timestamp = metaObj.optLong("timestamp", System.currentTimeMillis())
             )
@@ -684,7 +966,6 @@ class BackupManager(
     suspend fun resetAllApplicationData(): Result<String> {
         return try {
             database.withTransaction {
-                // Clear orders, order items, stock logs, menu items, categories, expenses, offers, notifications
                 database.orderDao().clearAllOrderItems()
                 database.orderDao().clearAllOrders()
                 database.stockLogDao().clearAllStockLogs()
@@ -693,6 +974,10 @@ class BackupManager(
                 database.expenseDao().clearAllExpenses()
                 database.offerDao().clearAllOffers()
                 database.notificationDao().clearAllNotifications()
+                database.tableDao().clearAllTables()
+                database.staffFoodDao().clearAllStaffFood()
+                database.syncRecordDao().clearAll()
+                database.userDao().clearAllUsers()
             }
             Result.success("All application data has been successfully reset.")
         } catch (e: Exception) {
@@ -705,7 +990,7 @@ class BackupManager(
             val existingUsers = database.userDao().getAllUsersSync()
 
             database.withTransaction {
-                // Clear existing tables
+                // Clear existing database tables
                 database.orderDao().clearAllOrderItems()
                 database.orderDao().clearAllOrders()
                 database.stockLogDao().clearAllStockLogs()
@@ -713,6 +998,16 @@ class BackupManager(
                 database.categoryDao().clearAll()
                 database.expenseDao().clearAllExpenses()
                 database.offerDao().clearAllOffers()
+                database.notificationDao().clearAllNotifications()
+                database.tableDao().clearAllTables()
+                database.staffFoodDao().clearAllStaffFood()
+                database.syncRecordDao().clearAll()
+                database.userDao().clearAllUsers()
+
+                // Insert Tables first (dependency parent)
+                if (parsedData.tables.isNotEmpty()) {
+                    database.tableDao().insertTables(parsedData.tables)
+                }
 
                 // Insert Categories
                 if (parsedData.categories.isNotEmpty()) {
@@ -722,6 +1017,23 @@ class BackupManager(
                 // Insert Menu Items
                 if (parsedData.menuItems.isNotEmpty()) {
                     database.menuItemDao().insertMenuItems(parsedData.menuItems)
+                }
+
+                // Restore Users safely
+                if (parsedData.users.isNotEmpty()) {
+                    val finalUsersToRestore = parsedData.users.map { restoredU ->
+                        val existingMatch = existingUsers.find {
+                            it.emailOrPhone.equals(restoredU.emailOrPhone, ignoreCase = true) || it.id == restoredU.id
+                        }
+                        if (existingMatch != null && (restoredU.passwordHash == "[PROTECTED]" || restoredU.passwordHash.isBlank())) {
+                            restoredU.copy(passwordHash = existingMatch.passwordHash)
+                        } else if (existingMatch == null && (restoredU.passwordHash == "[PROTECTED]" || restoredU.passwordHash.isBlank())) {
+                            restoredU.copy(passwordHash = "123456")
+                        } else {
+                            restoredU
+                        }
+                    }
+                    database.userDao().insertUsers(finalUsersToRestore)
                 }
 
                 // Insert Orders & Order Items
@@ -747,6 +1059,21 @@ class BackupManager(
                     database.offerDao().insertOffers(parsedData.offers)
                 }
 
+                // Insert Notifications
+                if (parsedData.notifications.isNotEmpty()) {
+                    database.notificationDao().insertNotifications(parsedData.notifications)
+                }
+
+                // Insert Staff Food
+                if (parsedData.staffFood.isNotEmpty()) {
+                    database.staffFoodDao().insertStaffFoodList(parsedData.staffFood)
+                }
+
+                // Insert Sync Records
+                if (parsedData.syncRecords.isNotEmpty()) {
+                    database.syncRecordDao().insertOrUpdateAll(parsedData.syncRecords)
+                }
+
                 // Restore Receipt Setting
                 parsedData.receiptSetting?.let { rs ->
                     database.receiptSettingDao().saveReceiptSetting(rs)
@@ -756,22 +1083,24 @@ class BackupManager(
                 parsedData.printerSetting?.let { ps ->
                     database.printerSettingDao().savePrinterSetting(ps)
                 }
+            }
 
-                // Restore Users safely
-                if (parsedData.users.isNotEmpty()) {
-                    val finalUsersToRestore = parsedData.users.map { restoredU ->
-                        val existingMatch = existingUsers.find {
-                            it.emailOrPhone.equals(restoredU.emailOrPhone, ignoreCase = true) || it.id == restoredU.id
-                        }
-                        if (existingMatch != null && (restoredU.passwordHash == "[PROTECTED]" || restoredU.passwordHash.isBlank())) {
-                            restoredU.copy(passwordHash = existingMatch.passwordHash)
-                        } else if (existingMatch == null && (restoredU.passwordHash == "[PROTECTED]" || restoredU.passwordHash.isBlank())) {
-                            restoredU.copy(passwordHash = "123456") // default safe hash fallback if new staff
-                        } else {
-                            restoredU
-                        }
+            // Restore App Settings (SharedPreferences)
+            parsedData.appSettings?.let { appSet ->
+                val appPrefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+                appPrefs.edit().apply {
+                    putString("language", appSet.language)
+                    putString("app_theme", appSet.appTheme)
+                    putString("opening_cash", appSet.openingCash)
+                    apply()
+                }
+                if (appSet.notificationCategories.isNotEmpty()) {
+                    val notifPrefs = context.getSharedPreferences("notification_settings", Context.MODE_PRIVATE)
+                    val notifEditor = notifPrefs.edit()
+                    appSet.notificationCategories.forEach { (key, enabled) ->
+                        notifEditor.putBoolean(key, enabled)
                     }
-                    database.userDao().insertUsers(finalUsersToRestore)
+                    notifEditor.apply()
                 }
             }
 

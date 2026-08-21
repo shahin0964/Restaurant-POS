@@ -690,8 +690,12 @@ fun BackupRestoreScreen(
                         "• Menu Items: ${data.menuItems.size}\n" +
                         "• Orders: ${data.orders.size}\n" +
                         "• Categories: ${data.categories.size}\n" +
+                        "• Tables: ${data.tables.size}\n" +
+                        "• Users/Staff: ${data.users.size}\n" +
                         "• Expenses: ${data.expenses.size}\n" +
                         "• Offers: ${data.offers.size}\n" +
+                        "• Notifications: ${data.notifications.size}\n" +
+                        "• Staff Food: ${data.staffFood.size}\n" +
                         "• Settings: Included",
                         color = TextSecondary,
                         fontSize = 12.sp

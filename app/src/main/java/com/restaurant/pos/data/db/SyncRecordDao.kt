@@ -13,6 +13,9 @@ interface SyncRecordDao {
     @Query("SELECT * FROM sync_records WHERE pendingSync = 1")
     suspend fun getPendingSyncRecords(): List<SyncRecordEntity>
 
+    @Query("SELECT * FROM sync_records ORDER BY id ASC")
+    suspend fun getAllSyncRecordsSync(): List<SyncRecordEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(entity: SyncRecordEntity): Long
 
