@@ -15,6 +15,7 @@ import com.restaurant.pos.data.syncv3.SyncQueueWorker
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import java.util.Locale
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -1162,6 +1163,169 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
                 }
             }
             onComplete()
+        }
+    }
+
+    /**
+     * Parses a CSV / tab-delimited text or raw text stream from Uri and bulk imports Products and Categories into Room.
+     * Expected columns: Category, Name, Price, CostPrice, Stock, Unit, Available
+     */
+    fun bulkImportProductsFromUri(
+        uri: Uri,
+        onProgress: (Boolean) -> Unit,
+        onResult: (success: Boolean, message: String) -> Unit
+    ) {
+        viewModelScope.launch {
+            onProgress(true)
+            try {
+                val context = getApplication<Application>()
+                val inputStream = context.contentResolver.openInputStream(uri)
+                if (inputStream == null) {
+                    onProgress(false)
+                    onResult(false, "Could not open selected file.")
+                    return@launch
+                }
+
+                val lines = mutableListOf<String>()
+                inputStream.bufferedReader(Charsets.UTF_8).useLines { seq ->
+                    seq.forEach { line ->
+                        if (line.isNotBlank()) {
+                            lines.add(line.trim())
+                        }
+                    }
+                }
+
+                if (lines.isEmpty()) {
+                    onProgress(false)
+                    onResult(false, "Selected file is empty.")
+                    return@launch
+                }
+
+                // Helper to split CSV row handling quotes and commas/semicolons/tabs
+                fun parseCsvLine(line: String): List<String> {
+                    val delimiter = when {
+                        line.contains("\t") -> '\t'
+                        line.contains(";") && !line.contains(",") -> ';'
+                        else -> ','
+                    }
+                    val tokens = mutableListOf<String>()
+                    val sb = StringBuilder()
+                    var inQuotes = false
+
+                    for (i in line.indices) {
+                        val c = line[i]
+                        if (c == '\"') {
+                            inQuotes = !inQuotes
+                        } else if (c == delimiter && !inQuotes) {
+                            tokens.add(sb.toString().trim().trim('\"'))
+                            sb.clear()
+                        } else {
+                            sb.append(c)
+                        }
+                    }
+                    tokens.add(sb.toString().trim().trim('\"'))
+                    return tokens
+                }
+
+                val headerTokens = parseCsvLine(lines[0]).map { it.lowercase(Locale.ROOT).replace(" ", "").replace("_", "") }
+
+                var catIdx = headerTokens.indexOfFirst { it.contains("cat") }
+                var nameIdx = headerTokens.indexOfFirst { it.contains("name") || it.contains("product") || it.contains("item") || it.contains("title") }
+                var priceIdx = headerTokens.indexOfFirst { it == "price" || it.contains("saleprice") || it.contains("retail") }
+                var costPriceIdx = headerTokens.indexOfFirst { it.contains("cost") || it.contains("buyprice") || it.contains("purchase") }
+                var stockIdx = headerTokens.indexOfFirst { it.contains("stock") || it.contains("qty") || it.contains("quantity") }
+                var unitIdx = headerTokens.indexOfFirst { it.contains("unit") || it.contains("measure") }
+                var availIdx = headerTokens.indexOfFirst { it.contains("avail") || it.contains("active") || it.contains("status") }
+
+                val dataStartIdx: Int
+                if (nameIdx >= 0 || priceIdx >= 0) {
+                    dataStartIdx = 1
+                } else {
+                    // Fallback default index mapping: Category, Name, Price, CostPrice, Stock, Unit, Available
+                    catIdx = 0
+                    nameIdx = 1
+                    priceIdx = 2
+                    costPriceIdx = 3
+                    stockIdx = 4
+                    unitIdx = 5
+                    availIdx = 6
+                    dataStartIdx = 0
+                }
+
+                val existingCategories = database.categoryDao().getAllCategoriesSync().toMutableList()
+                val categoryMap = mutableMapOf<String, Long>()
+                existingCategories.forEach {
+                    categoryMap[it.name.lowercase(Locale.ROOT).trim()] = it.id
+                }
+
+                var importedProductsCount = 0
+                val categoriesCreated = mutableSetOf<String>()
+
+                database.withTransaction {
+                    for (i in dataStartIdx until lines.size) {
+                        val rowTokens = parseCsvLine(lines[i])
+                        if (rowTokens.isEmpty() || rowTokens.all { it.isBlank() }) continue
+
+                        val rawCat = if (catIdx in rowTokens.indices) rowTokens[catIdx].trim() else "General"
+                        val catName = if (rawCat.isBlank()) "General" else rawCat
+                        val rawName = if (nameIdx in rowTokens.indices) rowTokens[nameIdx].trim() else ""
+                        if (rawName.isBlank()) continue
+
+                        val rawPrice = if (priceIdx in rowTokens.indices) rowTokens[priceIdx].replace("[^0-9.]".toRegex(), "") else "0.0"
+                        val price = rawPrice.toDoubleOrNull() ?: 0.0
+
+                        val rawCostPrice = if (costPriceIdx in rowTokens.indices) rowTokens[costPriceIdx].replace("[^0-9.]".toRegex(), "") else "0.0"
+                        val costPrice = rawCostPrice.toDoubleOrNull() ?: 0.0
+
+                        val rawStock = if (stockIdx in rowTokens.indices) rowTokens[stockIdx].replace("[^0-9]".toRegex(), "") else "20"
+                        val stock = rawStock.toIntOrNull() ?: 20
+
+                        val rawUnit = if (unitIdx in rowTokens.indices) rowTokens[unitIdx].trim() else "pcs"
+                        val unit = if (rawUnit.isBlank()) "pcs" else rawUnit
+
+                        val rawAvail = if (availIdx in rowTokens.indices) rowTokens[availIdx].trim().lowercase(Locale.ROOT) else "true"
+                        val isAvailable = rawAvail != "false" && rawAvail != "0" && rawAvail != "no" && rawAvail != "inactive"
+
+                        val catKey = catName.lowercase(Locale.ROOT).trim()
+                        var catId = categoryMap[catKey]
+                        if (catId == null) {
+                            val newCat = CategoryEntity(name = catName)
+                            catId = database.categoryDao().insertCategory(newCat)
+                            categoryMap[catKey] = catId
+                            categoriesCreated.add(catName)
+                        }
+
+                        val menuItem = MenuItemEntity(
+                            id = 0L,
+                            name = rawName,
+                            categoryId = catId,
+                            categoryName = catName,
+                            price = price,
+                            costPrice = costPrice,
+                            description = "",
+                            imageUrl = "",
+                            isAvailable = isAvailable,
+                            stockQuantity = stock,
+                            unit = unit,
+                            lowStockThreshold = 10
+                        )
+                        database.menuItemDao().insertMenuItem(menuItem)
+                        importedProductsCount++
+                    }
+                }
+
+                onProgress(false)
+                if (importedProductsCount > 0) {
+                    val catSummary = if (categoriesCreated.isNotEmpty()) " (${categoriesCreated.size} new categories)" else ""
+                    onResult(true, "Successfully imported $importedProductsCount products$catSummary!")
+                } else {
+                    onResult(false, "No valid product records found in file. Ensure headers: Category, Name, Price, CostPrice, Stock, Unit, Available.")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("RestaurantViewModel", "Error importing CSV/Excel: ${e.message}", e)
+                onProgress(false)
+                onResult(false, "Import failed: ${e.localizedMessage ?: "Invalid file format."}")
+            }
         }
     }
 

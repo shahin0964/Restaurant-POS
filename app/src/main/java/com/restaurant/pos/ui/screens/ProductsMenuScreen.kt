@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
@@ -82,6 +83,30 @@ fun ProductsMenuScreen(
     var categoryToEdit by remember { mutableStateOf<CategoryEntity?>(null) }
     var categoryToDelete by remember { mutableStateOf<CategoryEntity?>(null) }
 
+    // Bulk Import state
+    var isImporting by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            viewModel.bulkImportProductsFromUri(
+                uri = uri,
+                onProgress = { isImporting = it },
+                onResult = { success, msg ->
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar(
+                            message = msg,
+                            duration = SnackbarDuration.Short
+                        )
+                    }
+                }
+            )
+        }
+    }
+
     val filteredItems = remember(menuItems, searchQuery, activeTab) {
         menuItems.filter { item ->
             searchQuery.isBlank() ||
@@ -99,6 +124,7 @@ fun ProductsMenuScreen(
     val canShowFab = if (activeTab == "PRODUCTS") canAddProducts else canAddCategories
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             Box(
                 modifier = Modifier
@@ -125,8 +151,33 @@ fun ProductsMenuScreen(
                         text = "Products & Category",
                         color = TextPrimary,
                         fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
                     )
+
+                    if (canAddProducts) {
+                        IconButton(
+                            onClick = {
+                                filePickerLauncher.launch("*/*")
+                            },
+                            enabled = !isImporting,
+                            modifier = Modifier.testTag("bulk_import_products_btn")
+                        ) {
+                            if (isImporting) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = BrandPrimary,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.FileUpload,
+                                    contentDescription = "Bulk Import Products",
+                                    tint = BrandPrimary
+                                )
+                            }
+                        }
+                    }
                 }
             }
         },
