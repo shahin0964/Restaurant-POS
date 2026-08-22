@@ -59,26 +59,30 @@ service cloud.firestore {
 
     match /users/{userId} {
 
-      // Authorized users can read users/staff.
-      allow read: if isAuthorized();
+      // Administrator and Manager can read all users; normal users can only read their own profile.
+      allow read: if isAuthorized() && (
+        isAdmin() ||
+        isManager() ||
+        request.auth.uid == userId
+      );
 
 
       // -------------------------------------------------------
       // CREATE
       //
       // 1. User can create their own initial profile (non-privileged role only).
-      // 2. Administrator can create user profiles.
+      // 2. Administrator can create Staff/Manager/Admin profiles.
       // -------------------------------------------------------
 
       allow create: if isAuthenticated() && (
         (
           request.auth.uid == userId &&
           (
-          !('role' in request.resource.data) ||
-          !(request.resource.data.role in [
-            'Administrator', 'ADMINISTRATOR', 'Admin', 'ADMIN',
-            'Manager', 'MANAGER'
-          ])
+            !('role' in request.resource.data) ||
+            !(request.resource.data.role in [
+              'Administrator', 'ADMINISTRATOR', 'Admin', 'ADMIN',
+              'Manager', 'MANAGER'
+            ])
           )
         ) ||
         (
@@ -91,41 +95,29 @@ service cloud.firestore {
       // -------------------------------------------------------
       // UPDATE
       //
-      // Administrator can update staff (cannot promote any user to 2nd Administrator).
-      // Normal user can update only their own profile without modifying role/isActive/firebaseUid.
+      // Administrator can manage any user.
+      //
+      // Normal user can update only their own profile,
+      // while role/isActive/firebaseUid cannot be changed.
       // -------------------------------------------------------
 
       allow update: if isAuthorized() && (
-        (
-          isAdmin() &&
-          (
-            // Admin updating self/existing admin OR keeping staff role as Staff
-            resource.data.role == 'Administrator' ||
-            resource.data.role == 'ADMINISTRATOR' ||
-            resource.data.role == 'Admin' ||
-            resource.data.role == 'ADMIN' ||
-            request.resource.data.role == 'Staff'
-          )
-        ) ||
+        isAdmin() ||
         (
           request.auth.uid == userId &&
-          request.resource.data.role == resource.data.role &&
-          request.resource.data.isActive == resource.data.isActive &&
-          request.resource.data.firebaseUid == resource.data.firebaseUid
+          request.resource.data.get('role', 'Staff') == resource.data.get('role', 'Staff') &&
+          request.resource.data.get('isActive', true) == resource.data.get('isActive', true) &&
+          request.resource.data.get('firebaseUid', userId) == resource.data.get('firebaseUid', userId)
         )
       );
 
 
       // -------------------------------------------------------
       // DELETE
-      // Only Administrator can delete staff profiles (cannot delete Administrator).
+      // Only Administrator can delete staff/user profiles.
       // -------------------------------------------------------
 
-      allow delete: if isAuthorized() && isAdmin() &&
-        resource.data.role != 'Administrator' &&
-        resource.data.role != 'ADMINISTRATOR' &&
-        resource.data.role != 'Admin' &&
-        resource.data.role != 'ADMIN';
+      allow delete: if isAuthorized() && isAdmin();
     }
 
 
@@ -246,3 +238,4 @@ service cloud.firestore {
     }
   }
 }
+
