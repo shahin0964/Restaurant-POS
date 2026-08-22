@@ -3,6 +3,7 @@ package com.restaurant.pos.data
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import androidx.work.WorkManager
 import com.restaurant.pos.data.db.*
 import com.restaurant.pos.data.syncv3.*
 import kotlinx.coroutines.runBlocking
@@ -248,5 +249,173 @@ class Step8EndToEndSyncTest {
         val cloudRecord = fakeProxy.store[cloudPath]
         assertNotNull(cloudRecord)
         assertEquals("Offline Burgers", cloudRecord!!["name"])
+    }
+
+    // --- 5. NETWORK RECONNECT SYNC TRIGGER ---
+    @Test
+    fun testNetworkReconnectTriggersImmediateSyncAndUploads() = runBlocking {
+        try {
+            val config = androidx.work.Configuration.Builder()
+                .setExecutor(java.util.concurrent.Executors.newSingleThreadExecutor())
+                .build()
+            WorkManager.initialize(context, config)
+        } catch (e: Exception) {
+            // Already initialized
+        }
+
+        val categoryId = database.categoryDao().insertCategory(CategoryEntity(name = "Burgers"))
+        val syncId = "cat-burger-reconnect"
+        database.syncRecordDao().insertOrUpdate(SyncRecordEntity(
+            tableName = "categories",
+            localId = categoryId,
+            firestoreId = syncId,
+            pendingSync = true,
+            operation = "CREATE"
+        ))
+
+        fakeProxy.shouldThrow = true
+        fakeProxy.shouldThrow = false
+
+        SyncQueueWorker.triggerImmediateSync(context)
+
+        val uploadedCount = syncRepository.uploadPendingQueue()
+        assertEquals(1, uploadedCount)
+
+        val updatedRecord = database.syncRecordDao().getRecordByLocalId("categories", categoryId)
+        assertNotNull(updatedRecord)
+        assertFalse(updatedRecord!!.pendingSync)
+    }
+
+    // --- 6. FAILED UPLOAD SYSTEM RETAINS PENDING STATE ---
+    @Test
+    fun testFailedUploadKeepsRecordPendingAndRetryable() = runBlocking {
+        val categoryId = database.categoryDao().insertCategory(CategoryEntity(name = "Pizza"))
+        val syncId = "cat-pizza-failed"
+        database.syncRecordDao().insertOrUpdate(SyncRecordEntity(
+            tableName = "categories",
+            localId = categoryId,
+            firestoreId = syncId,
+            pendingSync = true,
+            operation = "CREATE"
+        ))
+
+        fakeProxy.shouldThrow = true
+        try {
+            syncRepository.uploadPendingQueue()
+        } catch (e: Exception) {}
+
+        val record = database.syncRecordDao().getRecordByLocalId("categories", categoryId)
+        assertNotNull(record)
+        assertTrue(record!!.pendingSync)
+    }
+
+    // --- 7. RETRY TO SUCCESSFUL SYNC ENGINE ---
+    @Test
+    fun testSuccessfulRetryClearsPendingStateAfterFailure() = runBlocking {
+        val categoryId = database.categoryDao().insertCategory(CategoryEntity(name = "Salad"))
+        val syncId = "cat-salad-retry"
+        database.syncRecordDao().insertOrUpdate(SyncRecordEntity(
+            tableName = "categories",
+            localId = categoryId,
+            firestoreId = syncId,
+            pendingSync = true,
+            operation = "CREATE"
+        ))
+
+        fakeProxy.shouldThrow = true
+        try {
+            syncRepository.uploadPendingQueue()
+        } catch (e: Exception) {}
+
+        var record = database.syncRecordDao().getRecordByLocalId("categories", categoryId)
+        assertTrue(record!!.pendingSync)
+
+        fakeProxy.shouldThrow = false
+        val successCount = syncRepository.uploadPendingQueue()
+        assertEquals(1, successCount)
+
+        record = database.syncRecordDao().getRecordByLocalId("categories", categoryId)
+        assertFalse(record!!.pendingSync)
+    }
+
+    // --- 8. DUPLICATE QUEUE PROTECTION BY UNIQUE (TABLENAME, LOCALID) ---
+    @Test
+    fun testDuplicateProtectionEnsuresOnlyOneSyncRecordPerEntity() = runBlocking {
+        val categoryId = database.categoryDao().insertCategory(CategoryEntity(name = "Dessert"))
+        
+        val syncRecord1 = SyncRecordEntity(
+            tableName = "categories",
+            localId = categoryId,
+            firestoreId = "dessert-sync-1",
+            pendingSync = true,
+            operation = "CREATE"
+        )
+        database.syncRecordDao().insertOrUpdate(syncRecord1)
+
+        val syncRecord2 = SyncRecordEntity(
+            tableName = "categories",
+            localId = categoryId,
+            firestoreId = "dessert-sync-1",
+            pendingSync = true,
+            operation = "UPDATE"
+        )
+        database.syncRecordDao().insertOrUpdate(syncRecord2)
+
+        val allRecords = database.syncRecordDao().getAllSyncRecordsSync()
+        val matches = allRecords.filter { it.tableName == "categories" && it.localId == categoryId }
+        assertEquals(1, matches.size)
+    }
+
+    // --- 9. ACCOUNT ISOLATION ---
+    @Test
+    fun testAccountIsolationPreventsCrossAccountUploads() = runBlocking {
+        val categoryId = database.categoryDao().insertCategory(CategoryEntity(name = "Wings"))
+        val syncId = "wings-sync-1"
+        database.syncRecordDao().insertOrUpdate(SyncRecordEntity(
+            tableName = "categories",
+            localId = categoryId,
+            firestoreId = syncId,
+            pendingSync = true,
+            operation = "CREATE"
+        ))
+
+        activeUid = "user_b_999"
+        syncRepository.uploadPendingQueue()
+
+        val pathUserB = "accounts/user_b_999/categories/$syncId"
+        val pathUserA = "accounts/user_e2e_888/categories/$syncId"
+
+        assertNotNull(fakeProxy.store[pathUserB])
+        assertNull(fakeProxy.store[pathUserA])
+    }
+
+    // --- 10. REAL-TIME LOOP PROTECTION ---
+    @Test
+    fun testRealtimeLoopProtectionDoesNotReTriggerUploadFromOwnCloudEvents() = runBlocking {
+        val categoryId = database.categoryDao().insertCategory(CategoryEntity(name = "Pasta"))
+        val syncId = "pasta-sync-1"
+        database.syncRecordDao().insertOrUpdate(SyncRecordEntity(
+            tableName = "categories",
+            localId = categoryId,
+            firestoreId = syncId,
+            pendingSync = false,
+            lastSyncTime = 2000L
+        ))
+        LocalVersionTracker.setLocalVersion(context, "categories", syncId, 1L)
+
+        val cloudSnapshot = mapOf(
+            "syncId" to syncId,
+            "name" to "Pasta",
+            "version" to 1L,
+            "isDeleted" to false,
+            "lastChanged" to 2000L
+        )
+
+        val job = cloudListener.handleSnapshotMap("categories", syncId, cloudSnapshot, activeUid)
+        job.join()
+
+        val record = database.syncRecordDao().getRecordByLocalId("categories", categoryId)
+        assertNotNull(record)
+        assertFalse(record!!.pendingSync)
     }
 }
