@@ -253,6 +253,13 @@ enum class UserRole(
     val icon: String,
     val defaultPermissions: Set<String>
 ) {
+    ADMINISTRATOR(
+        roleName = "Administrator",
+        displayName = "Administrator",
+        description = "Full root access to all POS operations, settings, staff and reports.",
+        icon = "👑",
+        defaultPermissions = AppPermission.allKeys()
+    ),
     ADMIN(
         roleName = "Admin",
         displayName = "Admin",
@@ -335,10 +342,11 @@ enum class UserRole(
     companion object {
         fun fromRoleName(name: String): UserRole {
             val normalized = name.trim().lowercase()
-            return when {
-                normalized == "admin" || normalized == "administrator" -> ADMIN
-                normalized == "manager" -> MANAGER
-                normalized == "cashier" -> CASHIER
+            return when (normalized) {
+                "administrator" -> ADMINISTRATOR
+                "admin" -> ADMIN
+                "manager" -> MANAGER
+                "cashier" -> CASHIER
                 else -> STAFF
             }
         }

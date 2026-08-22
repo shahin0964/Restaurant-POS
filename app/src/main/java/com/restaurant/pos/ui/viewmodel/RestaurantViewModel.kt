@@ -14,6 +14,7 @@ import com.restaurant.pos.data.repository.*
 import com.restaurant.pos.data.syncv3.SyncQueueWorker
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -27,6 +28,9 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
 
     private val _lastSyncError = MutableStateFlow(syncPrefs.getString("sync_error", null))
     val lastSyncError: StateFlow<String?> = _lastSyncError.asStateFlow()
+
+    private val _isManualSyncing = MutableStateFlow(false)
+    val isManualSyncing: StateFlow<Boolean> = _isManualSyncing.asStateFlow()
 
     private val syncPrefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
@@ -73,6 +77,57 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun forceCloudSync() {
         // No-op: Firestore sync removed in Step 2.
+    }
+
+    fun manualTriggerSync() {
+        viewModelScope.launch {
+            if (_isManualSyncing.value) return@launch
+            _isManualSyncing.value = true
+            syncPrefs.edit()
+                .putBoolean("sync_active", true)
+                .putString("sync_error", null)
+                .apply()
+            
+            try {
+                val currentUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+                if (currentUser == null) {
+                    syncPrefs.edit()
+                        .putBoolean("sync_active", false)
+                        .putString("sync_error", "Not authenticated with Firebase. Please login/re-login.")
+                        .apply()
+                    _isManualSyncing.value = false
+                    return@launch
+                }
+
+                // Refresh the Firebase Auth token explicitly
+                try {
+                    android.util.Log.i("RestaurantViewModel", "Refreshing Firebase Auth Token manually...")
+                    currentUser.getIdToken(false).await()
+                    android.util.Log.i("RestaurantViewModel", "Firebase Auth Token refreshed successfully.")
+                } catch (e: Exception) {
+                    android.util.Log.e("RestaurantViewModel", "Failed to force refresh Firebase Auth Token: ${e.message}")
+                    syncPrefs.edit()
+                        .putBoolean("sync_active", false)
+                        .putString("sync_error", "Token refresh failed: ${e.localizedMessage ?: "Please re-login."}")
+                        .apply()
+                    _isManualSyncing.value = false
+                    return@launch
+                }
+
+                // Trigger immediate sync queue processing
+                SyncQueueWorker.triggerImmediateSync(getApplication())
+                // Briefly wait for WorkManager execution update
+                kotlinx.coroutines.delay(1500L)
+            } catch (e: Exception) {
+                android.util.Log.e("RestaurantViewModel", "Error in manual sync trigger: ${e.message}")
+                syncPrefs.edit()
+                    .putBoolean("sync_active", false)
+                    .putString("sync_error", e.localizedMessage ?: "Sync trigger failed")
+                    .apply()
+            } finally {
+                _isManualSyncing.value = false
+            }
+        }
     }
 
     fun applyLocale(context: Context, languageCode: String) {

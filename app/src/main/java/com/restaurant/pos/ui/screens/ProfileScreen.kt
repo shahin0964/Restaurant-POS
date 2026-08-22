@@ -254,6 +254,62 @@ fun ProfileScreen(
                                     .testTag("profile_sync_error_msg")
                             )
                         }
+
+                        val isManualSyncing by viewModel.isManualSyncing.collectAsState()
+
+                        HorizontalDivider(color = BorderOutline, thickness = 1.dp)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            OutlinedButton(
+                                onClick = { viewModel.manualTriggerSync() },
+                                enabled = !isSyncActive && !isManualSyncing,
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = CurrencyGold,
+                                    disabledContentColor = TextMuted
+                                ),
+                                border = ButtonDefaults.outlinedButtonBorder.copy(
+                                    brush = androidx.compose.ui.graphics.SolidColor(if (isSyncActive || isManualSyncing) BorderOutline else CurrencyGold)
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp)
+                                    .testTag("profile_retry_sync_btn")
+                            ) {
+                                if (isSyncActive || isManualSyncing) {
+                                    CircularProgressIndicator(
+                                        color = CurrencyGold,
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Syncing / Token Refreshing...",
+                                        color = CurrencyGold,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.CloudUpload,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                        tint = CurrencyGold
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Retry Sync / Force Backup",
+                                        color = CurrencyGold,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 

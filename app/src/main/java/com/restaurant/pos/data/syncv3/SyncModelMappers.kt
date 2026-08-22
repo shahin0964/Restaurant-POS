@@ -253,16 +253,40 @@ object SyncModelMappers {
     }
 
     fun toEntity(syncModel: UserSyncModel, localId: Long): UserEntity {
+        val currentFirebaseUid = try {
+            com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+        } catch (e: Exception) {
+            null
+        }
+
+        val isSessionMatch = !currentFirebaseUid.isNullOrBlank() && 
+            (syncModel.firebaseUid == currentFirebaseUid || syncModel.syncId == currentFirebaseUid)
+
+        val isRoleAdmin = syncModel.role.equals("Administrator", ignoreCase = true) || 
+                          syncModel.role.equals("Admin", ignoreCase = true)
+
+        val resolvedRole = if (isSessionMatch || isRoleAdmin) {
+            "Administrator"
+        } else {
+            syncModel.role.ifBlank { "Staff" }
+        }
+
+        val resolvedPermissions = if (resolvedRole.equals("Administrator", ignoreCase = true)) {
+            com.restaurant.pos.data.model.AppPermission.allKeys().joinToString(",")
+        } else {
+            syncModel.permissions
+        }
+
         return UserEntity(
             id = localId,
             emailOrPhone = syncModel.emailOrPhone,
             name = syncModel.name,
-            role = syncModel.role,
+            role = resolvedRole,
             passwordHash = syncModel.passwordHash,
             firebaseUid = syncModel.firebaseUid.ifBlank { null },
-            isCurrentSession = false,
+            isCurrentSession = isSessionMatch,
             isActive = syncModel.isActive,
-            permissions = syncModel.permissions
+            permissions = resolvedPermissions
         )
     }
 

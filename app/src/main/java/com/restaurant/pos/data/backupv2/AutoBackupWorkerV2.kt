@@ -7,6 +7,7 @@ import androidx.work.WorkerParameters
 import com.restaurant.pos.data.db.AppDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.tasks.await
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -26,6 +27,14 @@ class AutoBackupWorkerV2(
         }
 
         val database = AppDatabase.getInstance(context)
+
+        // Validate active Firebase session prior to backup operations
+        val currentUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (currentUser == null) {
+            android.util.Log.w("AutoBackupWorkerV2", "AutoBackup aborted: No authenticated Firebase session.")
+            return@withContext Result.failure()
+        }
+
         val backupEngine = BackupEngineV2(context, database)
 
         val backupDir = File(context.filesDir, "auto_backups")

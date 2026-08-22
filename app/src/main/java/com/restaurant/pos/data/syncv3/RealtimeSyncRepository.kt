@@ -102,9 +102,11 @@ class RealtimeSyncRepository(
     private val getUid: () -> String = {
         val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
         if (uid.isNullOrBlank()) {
-            throw IllegalStateException("Database operations are prohibited: User is not authenticated.")
+            // Allow checking local database admin fallback rather than hard crashing
+            "NONE"
+        } else {
+            uid
         }
-        uid
     }
 ) {
     private val TAG = "RealtimeSyncRepository"
@@ -112,18 +114,28 @@ class RealtimeSyncRepository(
 
     /**
      * Checks if Firebase authentication session is active. Returns the UID.
-     * Throws IllegalStateException if not authenticated, keeping operations isolated.
+     * Throws IllegalStateException if not authenticated and no fallback, keeping operations isolated.
      */
     suspend fun getAuthenticatedUid(): String {
-        val currentUid = getUid()
+        val currentUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (currentUser != null) {
+            return currentUser.uid
+        }
+        
+        // Dynamic fallback: If user session is currently null (e.g. offline desync),
+        // use the local administrator's cached Firebase UID so queue writes map correctly.
         val adminUid = try {
             database.userDao().getAdministrator()?.firebaseUid
         } catch (e: Exception) {
             null
         }
-        val resolvedUid = if (!adminUid.isNullOrBlank()) adminUid else currentUid
-        android.util.Log.i(TAG, "getAuthenticatedUid: resolved currentUid=$currentUid, adminUid=$adminUid -> resolvedUid=$resolvedUid")
-        return resolvedUid
+        
+        if (!adminUid.isNullOrBlank()) {
+            android.util.Log.i(TAG, "getAuthenticatedUid: resolved offline fallback Admin UID = $adminUid")
+            return adminUid
+        }
+        
+        throw IllegalStateException("Database operations are prohibited: No active Firebase session and no cached admin UID available.")
     }
 
     /**
@@ -257,6 +269,7 @@ class RealtimeSyncRepository(
                 - resolved account owner UID: $uid
             """.trimIndent())
             
+            handleSyncException(e)
             throw e
         }
 
@@ -616,9 +629,45 @@ class RealtimeSyncRepository(
             }
             "users" -> {
                 val model = ModelParser.parseUser(cloudMap)
-                val entity = SyncModelMappers.toEntity(model, localId)
+                val existingUser = if (localId > 0L) {
+                    database.userDao().getUserById(localId)
+                } else if (model.firebaseUid.isNotBlank()) {
+                    database.userDao().getUserByFirebaseUid(model.firebaseUid)
+                } else {
+                    database.userDao().getUserByEmailOrPhone(model.emailOrPhone)
+                }
+
+                val currentSessionUser = database.userDao().getCurrentSessionUserSync()
+                val isCurrentlyLoggedIn = (existingUser != null && currentSessionUser != null && existingUser.id == currentSessionUser.id) ||
+                        (model.firebaseUid.isNotBlank() && currentSessionUser?.firebaseUid == model.firebaseUid) ||
+                        (model.syncId.isNotBlank() && currentSessionUser?.firebaseUid == model.syncId) ||
+                        (existingUser?.isCurrentSession == true)
+
+                val isSessionAdmin = currentSessionUser?.isAdmin() == true
+                val isExistingAdmin = existingUser?.isAdmin() == true
+                val shouldPreserveAdmin = (isCurrentlyLoggedIn && isSessionAdmin) || isExistingAdmin ||
+                        model.role.equals("Administrator", ignoreCase = true) || model.role.equals("Admin", ignoreCase = true)
+
+                val resolvedRole = if (shouldPreserveAdmin) {
+                    "Administrator"
+                } else {
+                    if (isCurrentlyLoggedIn && existingUser != null) existingUser.role else model.role.ifBlank { "Staff" }
+                }
+
+                val resolvedIsCurrentSession = if (isCurrentlyLoggedIn) true else (existingUser?.isCurrentSession ?: false)
+
+                val entity = SyncModelMappers.toEntity(model, existingUser?.id ?: localId).copy(
+                    role = resolvedRole,
+                    isCurrentSession = resolvedIsCurrentSession,
+                    passwordHash = existingUser?.passwordHash ?: model.passwordHash,
+                    permissions = if (resolvedRole.equals("Administrator", ignoreCase = true)) {
+                        com.restaurant.pos.data.model.AppPermission.allKeys().joinToString(",")
+                    } else {
+                        model.permissions
+                    }
+                )
                 val insertedId = database.userDao().insertUser(entity)
-                if (localId <= 0L) insertedId else localId
+                if (localId <= 0L) (existingUser?.id ?: insertedId) else localId
             }
             "tables" -> {
                 val model = ModelParser.parseTable(cloudMap)

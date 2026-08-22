@@ -415,7 +415,7 @@ fun StaffUserCardRow(
     val activePermsCount = if (isAdmin) totalPermsCount else effectivePerms.size
 
     val roleColor = when (userRoleObj) {
-        UserRole.ADMIN -> CurrencyGold
+        UserRole.ADMINISTRATOR, UserRole.ADMIN -> CurrencyGold
         UserRole.MANAGER -> Color(0xFF42A5F5)
         UserRole.CASHIER -> Color(0xFF66BB6A)
         UserRole.STAFF -> Color(0xFFFFB74D)
@@ -847,7 +847,7 @@ fun AddEditStaffDialog(
                     } else {
                         // Role Selection Cards / Grid
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            UserRole.entries.forEach { roleOption ->
+                            UserRole.entries.filter { it != UserRole.ADMINISTRATOR }.forEach { roleOption ->
                                 val isSelected = selectedRole == roleOption
                                 val roleBorderColor = if (isSelected) CurrencyGold else BorderOutline
 

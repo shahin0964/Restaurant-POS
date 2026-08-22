@@ -7,6 +7,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.restaurant.pos.data.db.AppDatabase
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.tasks.await
 
 /**
  * Worker managed by Android WorkManager to process the offline sync queue
@@ -27,25 +28,47 @@ class SyncQueueWorker(
             .putString("sync_error", null)
             .apply()
 
+        val database = AppDatabase.getInstance(applicationContext)
+        val userDao = database.userDao()
+        val syncRecordDao = database.syncRecordDao()
+
         // Validate Firebase Authentication state dynamically
         val currentUser = FirebaseAuth.getInstance().currentUser
+        val localSessionUser = try { userDao.getCurrentSessionUserSync() } catch (e: Exception) { null }
+
         if (currentUser == null) {
-            Log.w(TAG, "Sync aborted: No authenticated Firebase user session found.")
-            android.util.Log.i(TAG, "WORKER_RESULT = FAILURE")
-            sharedPrefs.edit()
-                .putBoolean("sync_active", false)
-                .putString("sync_error", "Not authenticated with Firebase.")
-                .apply()
-            // Return failure to reschedule when appropriate (safely retrying later)
-            return Result.failure()
+            if (localSessionUser != null && !localSessionUser.firebaseUid.isNullOrBlank()) {
+                Log.i(TAG, "FirebaseAuth.currentUser is null, but valid active local session user found: ${localSessionUser.emailOrPhone} (UID: ${localSessionUser.firebaseUid})")
+            } else {
+                Log.w(TAG, "Sync aborted: No authenticated Firebase user session and no local session found.")
+                android.util.Log.i(TAG, "WORKER_RESULT = FAILURE")
+                sharedPrefs.edit()
+                    .putBoolean("sync_active", false)
+                    .putString("sync_error", "Not authenticated with Firebase. Please re-login to resume sync.")
+                    .apply()
+                return Result.failure()
+            }
+        } else {
+            // Silent token re-authentication/refresh before executing sync database writes
+            try {
+                Log.d(TAG, "Silently refreshing Firebase session token...")
+                currentUser.getIdToken(false).await()
+                Log.d(TAG, "Firebase session token refreshed successfully.")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to refresh Firebase token silently: ${e.message}")
+                if (localSessionUser == null) {
+                    sharedPrefs.edit()
+                        .putBoolean("sync_active", false)
+                        .putString("sync_error", "Session expired or desynced. Please re-login.")
+                        .apply()
+                    return Result.failure()
+                }
+            }
         }
 
         android.util.Log.i(TAG, "WORKER_AUTH_OK")
-        val authUid = currentUser.uid
+        val authUid = currentUser?.uid ?: localSessionUser?.firebaseUid ?: ""
         Log.i(TAG, "Dynamic identity authorized for sync execution: Account UID = $authUid")
-
-        val database = AppDatabase.getInstance(applicationContext)
-        val syncRecordDao = database.syncRecordDao()
 
         val queueSize = try {
             syncRecordDao.getPendingSyncRecords().size
@@ -69,7 +92,7 @@ class SyncQueueWorker(
 
             sharedPrefs.edit()
                 .putBoolean("sync_active", false)
-                .putString("sync_error", null)
+                .remove("sync_error")
                 .apply()
 
             return Result.success()

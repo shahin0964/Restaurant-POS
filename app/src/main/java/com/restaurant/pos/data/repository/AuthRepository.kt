@@ -325,7 +325,7 @@ class AuthRepository(
                     "uid" to createdUid,
                     "email" to trimmedEmail,
                     "name" to trimmedName,
-                    "role" to chosenRole.lowercase().trim(),
+                    "role" to chosenRole.trim(),
                     "createdBy" to adminUid,
                     "createdAt" to System.currentTimeMillis()
                 )
@@ -360,20 +360,19 @@ class AuthRepository(
             val targetUser = userDao.getUserById(id)
                 ?: return Result.failure(Exception("Staff account not found."))
 
-            val isTargetAdmin = targetUser.role.equals("Administrator", ignoreCase = true) ||
-                    targetUser.role.equals("Admin", ignoreCase = true)
+            val isTargetAdministrator = targetUser.role.equals("Administrator", ignoreCase = true)
 
             // Protected Administrator account rules:
             // 1. Root Administrator role remains Administrator
             // 2. Administrator cannot be deactivated
-            val finalRole = if (isTargetAdmin) "Administrator" else chosenRole
-            val finalIsActive = if (isTargetAdmin) true else isActive
+            val finalRole = if (isTargetAdministrator) "Administrator" else chosenRole
+            val finalIsActive = if (isTargetAdministrator) true else isActive
 
             if (currentUserId != null && id == currentUserId && !finalIsActive) {
                 return Result.failure(Exception("You cannot deactivate your own logged-in account."))
             }
 
-            val finalPermissions = if (isTargetAdmin) {
+            val finalPermissions = if (isTargetAdministrator) {
                 com.restaurant.pos.data.model.AppPermission.allKeys().joinToString(",")
             } else if (permissions.isNotBlank()) {
                 permissions.trim()
@@ -398,7 +397,7 @@ class AuthRepository(
                     val updateMap = mapOf(
                         "name" to trimmedName,
                         "email" to trimmedEmail,
-                        "role" to finalRole.lowercase().trim(),
+                        "role" to finalRole.trim(),
                         "isActive" to finalIsActive
                     )
                     rtdb.getReference("users/$targetUid").updateChildren(updateMap).await()
