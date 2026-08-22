@@ -2,8 +2,8 @@
   "rules": {
     "accounts": {
       "$uid": {
-        ".read": "auth != null && auth.uid == $uid",
-        ".write": "auth != null && auth.uid == $uid"
+        ".read": "auth != null && (auth.uid == $uid || root.child('accounts').child($uid).child('users').child(auth.uid).exists())",
+        ".write": "auth != null && (auth.uid == $uid || root.child('accounts').child($uid).child('users').child(auth.uid).exists())"
       }
     }
   }

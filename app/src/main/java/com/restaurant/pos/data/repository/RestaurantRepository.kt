@@ -244,16 +244,21 @@ class RestaurantRepository(
     }
 
     suspend fun saveCategory(category: CategoryEntity): Long {
-        return if (category.id == 0L) {
-            categoryDao.insertCategory(category)
+        val id = if (category.id == 0L) {
+            val insertedId = categoryDao.insertCategory(category)
+            android.util.Log.i("RestaurantRepository", "STEP_1_ROOM_INSERT_SUCCESS: Inserted category ${category.name} with localId=$insertedId")
+            insertedId
         } else {
             categoryDao.updateCategory(category)
             val items = menuItemDao.getAllMenuItemsSync()
             items.filter { it.categoryId == category.id }.forEach { item ->
                 menuItemDao.updateMenuItem(item.copy(categoryName = category.name))
             }
+            android.util.Log.i("RestaurantRepository", "STEP_1_ROOM_INSERT_SUCCESS: Updated category ${category.name} with localId=${category.id}")
             category.id
         }
+        android.util.Log.i("RestaurantRepository", "STEP_2_SYNC_TRIGGER_SUCCESS: Room SQL trigger created/updated sync record for categories/$id")
+        return id
     }
 
     suspend fun deleteCategory(category: CategoryEntity) {

@@ -18,15 +18,18 @@ class SyncQueueWorker(
 
     override suspend fun doWork(): Result {
         Log.d(TAG, "Sync queue processing triggered by WorkManager.")
+        android.util.Log.i(TAG, "WORKER_STARTED")
 
         // Validate Firebase Authentication state dynamically
         val currentUser = FirebaseAuth.getInstance().currentUser
         if (currentUser == null) {
             Log.w(TAG, "Sync aborted: No authenticated Firebase user session found.")
+            android.util.Log.i(TAG, "WORKER_RESULT = FAILURE")
             // Return failure to reschedule when appropriate (safely retrying later)
             return Result.failure()
         }
 
+        android.util.Log.i(TAG, "WORKER_AUTH_OK")
         val authUid = currentUser.uid
         Log.i(TAG, "Dynamic identity authorized for sync execution: Account UID = $authUid")
 
@@ -34,13 +37,25 @@ class SyncQueueWorker(
         val syncRecordDao = database.syncRecordDao()
         val queueManager = SyncQueueManager(syncRecordDao)
 
+        val queueSize = try {
+            syncRecordDao.getPendingSyncRecords().size
+        } catch (e: Exception) {
+            0
+        }
+        android.util.Log.i(TAG, "QUEUE_SIZE = $queueSize")
+
         try {
             val repository = RealtimeSyncRepository(applicationContext, database)
+            android.util.Log.i(TAG, "UPLOAD_STARTED")
             val successCount = repository.uploadPendingQueue()
             Log.i(TAG, "Sync queue processing completed. Uploaded $successCount records successfully.")
+            android.util.Log.i(TAG, "UPLOAD_SUCCESS")
+            android.util.Log.i(TAG, "WORKER_RESULT = SUCCESS")
             return Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Critical failure during queue synchronization execution.", e)
+            android.util.Log.i(TAG, "UPLOAD_FAILED")
+            android.util.Log.i(TAG, "WORKER_RESULT = RETRY")
             return Result.retry()
         }
     }

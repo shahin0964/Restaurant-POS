@@ -10,6 +10,7 @@ import com.restaurant.pos.data.db.*
 import com.restaurant.pos.data.network.NetworkConnectivityObserver
 import com.restaurant.pos.data.storage.ProductImageStorageManager
 import com.restaurant.pos.data.repository.*
+import com.restaurant.pos.data.syncv3.SyncQueueWorker
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -845,6 +846,22 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
                 sharedPrefs.edit().putBoolean("has_removed_sample_tables_v1", true).apply()
             }
             checkForGitHubUpdates()
+        }
+        viewModelScope.launch {
+            pendingSyncCount.collect { count ->
+                if (count > 0) {
+                    android.util.Log.i("RestaurantViewModel", "Unsynced records detected ($count). Triggering immediate sync.")
+                    SyncQueueWorker.triggerImmediateSync(application)
+                }
+            }
+        }
+        viewModelScope.launch {
+            isOnline.collect { online ->
+                if (online && pendingSyncCount.value > 0) {
+                    android.util.Log.i("RestaurantViewModel", "Network came online with pending records (${pendingSyncCount.value}). Triggering immediate sync.")
+                    SyncQueueWorker.triggerImmediateSync(application)
+                }
+            }
         }
     }
 

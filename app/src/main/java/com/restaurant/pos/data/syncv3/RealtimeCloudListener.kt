@@ -88,7 +88,7 @@ class RealtimeCloudListener(
             return
         }
 
-        val databaseInstance = FirebaseDatabase.getInstance()
+        val databaseInstance = FirebaseDatabase.getInstance("https://restaurant-pos-99d57-default-rtdb.asia-southeast1.firebasedatabase.app/")
 
         for (table in tables) {
             val path = "accounts/$uid/$table"

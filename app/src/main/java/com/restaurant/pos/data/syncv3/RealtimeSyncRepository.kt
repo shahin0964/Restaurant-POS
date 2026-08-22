@@ -24,7 +24,7 @@ interface FirebaseDatabaseProxy {
 
 class RealtimeFirebaseProxy : FirebaseDatabaseProxy {
     override suspend fun getRecord(path: String): Map<String, Any?>? = suspendCancellableCoroutine { continuation ->
-        com.google.firebase.database.FirebaseDatabase.getInstance().getReference(path)
+        com.google.firebase.database.FirebaseDatabase.getInstance("https://restaurant-pos-99d57-default-rtdb.asia-southeast1.firebasedatabase.app/").getReference(path)
             .addListenerForSingleValueEvent(object : com.google.firebase.database.ValueEventListener {
                 override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
                     if (snapshot.exists()) {
@@ -40,7 +40,7 @@ class RealtimeFirebaseProxy : FirebaseDatabaseProxy {
     }
 
     override suspend fun getTableRecords(path: String): List<Map<String, Any?>> = suspendCancellableCoroutine { continuation ->
-        com.google.firebase.database.FirebaseDatabase.getInstance().getReference(path)
+        com.google.firebase.database.FirebaseDatabase.getInstance("https://restaurant-pos-99d57-default-rtdb.asia-southeast1.firebasedatabase.app/").getReference(path)
             .addListenerForSingleValueEvent(object : com.google.firebase.database.ValueEventListener {
                 override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
                     val results = mutableListOf<Map<String, Any?>>()
@@ -48,7 +48,7 @@ class RealtimeFirebaseProxy : FirebaseDatabaseProxy {
                         for (child in snapshot.children) {
                             val map = child.value as? Map<String, Any?>
                             if (map != null) {
-                                results.add(map)
+                                    results.add(map)
                             }
                         }
                     }
@@ -61,7 +61,7 @@ class RealtimeFirebaseProxy : FirebaseDatabaseProxy {
     }
 
     override suspend fun setRecord(path: String, data: Map<String, Any?>): Unit = suspendCancellableCoroutine { continuation ->
-        com.google.firebase.database.FirebaseDatabase.getInstance().getReference(path).setValue(data)
+        com.google.firebase.database.FirebaseDatabase.getInstance("https://restaurant-pos-99d57-default-rtdb.asia-southeast1.firebasedatabase.app/").getReference(path).setValue(data)
             .addOnCompleteListener { task ->
                 if (task.isSuccessful) {
                     continuation.resume(Unit)
@@ -98,24 +98,71 @@ class RealtimeSyncRepository(
      * Throws IllegalStateException if not authenticated, keeping operations isolated.
      */
     fun getAuthenticatedUid(): String {
-        return getUid()
+        val currentUid = getUid()
+        val adminUid = kotlinx.coroutines.runBlocking {
+            try {
+                database.userDao().getAdministrator()?.firebaseUid
+            } catch (e: Exception) {
+                null
+            }
+        }
+        val resolvedUid = if (!adminUid.isNullOrBlank()) adminUid else currentUid
+        android.util.Log.i(TAG, "getAuthenticatedUid: resolved currentUid=$currentUid, adminUid=$adminUid -> resolvedUid=$resolvedUid")
+        return resolvedUid
     }
 
     /**
      * Main entry point to upload a single local record with strict conflict safety and versioning.
      */
     suspend fun uploadRecord(tableName: String, localId: Long): Boolean {
-        val uid = getAuthenticatedUid()
+        val dbUrl = "https://restaurant-pos-99d57-default-rtdb.asia-southeast1.firebasedatabase.app/"
+        val currentUid = try {
+            getUid()
+        } catch (e: Exception) {
+            "NONE"
+        }
+        val uid = try {
+            getAuthenticatedUid()
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "DIAGNOSTIC - WRITE_AUTH_ERROR: Authentication resolution failed. DB URL: $dbUrl. Table: $tableName, Local ID: $localId. Exception: ${e.javaClass.name} - ${e.message}")
+            throw e
+        }
 
         // 1. Fetch local sync record
         val syncRecord = syncRecordDao.getRecordByLocalId(tableName, localId)
             ?: return false // If no sync record exists, cannot sync.
 
         val syncId = syncRecord.firestoreId
+        val path = "accounts/$uid/$tableName/$syncId"
+        val opType = syncRecord.operation
+
+        android.util.Log.i(TAG, """
+            SYNC_TRACE_START
+            tableName: $tableName
+            localId: $localId
+            syncRecord.id: ${syncRecord.id}
+            syncRecord.firestoreId: $syncId
+            operation: $opType
+            authenticatedFirebaseUid: $currentUid
+            resolvedAccountOwnerUid: $uid
+            exactFirebaseDatabaseUrl: $dbUrl
+            exactFirebasePath: $path
+        """.trimIndent())
+
+        android.util.Log.i(TAG, "STEP_3_PENDING_RECORD_FOUND: Table: $tableName, Local ID: $localId")
+        android.util.Log.i(TAG, "STEP_5_AUTH_SUCCESS: Authenticated Firebase UID = $currentUid, Resolved owner UID = $uid")
 
         // 2. Conflict resolution: Fetch current cloud version
-        val path = "accounts/$uid/$tableName/$syncId"
-        val cloudMap = firebaseProxy.getRecord(path)
+        var cloudMap: Map<String, Any?>? = null
+        try {
+            android.util.Log.i(TAG, "STEP_6_GET_RECORD_STARTED: Path: $path")
+            cloudMap = firebaseProxy.getRecord(path)
+            android.util.Log.i(TAG, "STEP_6_GET_RECORD_SUCCESS: Path: $path")
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "STEP_6_GET_RECORD_FAILED: Path: $path. Exception: ${e.javaClass.name} - ${e.message}")
+            throw e
+        }
+
         var cloudVersion = 0L
         var cloudLastChanged = 0L
 
@@ -125,13 +172,11 @@ class RealtimeSyncRepository(
         }
 
         // 3. Determine localVersion
-        // If first upload: version 1. Else cloudVersion + 1.
         val proposedVersion = if (cloudVersion == 0L) 1L else cloudVersion + 1L
 
         // Check if cloud record is actually newer (conflict)
         if (cloudMap != null && syncRecord.lastSyncTime > 0L) {
             if (cloudLastChanged > syncRecord.lastSyncTime) {
-                // Cloud was modified after our last sync! We should not blindly overwrite.
                 println("[$TAG] Conflict detected for $tableName/$syncId. Cloud is newer. Upload aborted.")
                 return false
             }
@@ -148,19 +193,76 @@ class RealtimeSyncRepository(
         } else {
             val localModelMap = resolveAndMapLocalEntity(tableName, localId, false)
                 ?: return false // If local record cannot be found or mapped, stop.
+            android.util.Log.i(TAG, "STEP_7_LOCAL_ENTITY_MAPPING_SUCCESS: Table: $tableName, Local ID: $localId")
             injectVersionAndDeletedState(tableName, localModelMap, proposedVersion, false)
         }
 
         // 5. Write to RTDB under /accounts/{uid}/{tableName}/{syncId}
         try {
+            android.util.Log.i(TAG, "STEP_8_FIREBASE_WRITE_STARTED: Path: $path")
             firebaseProxy.setRecord(path, uploadMap)
-            // 6. Update local sync record upon successful write
+            
+            // Print WRITE_SUCCESS explicitly
+            android.util.Log.i(TAG, """
+                WRITE_SUCCESS
+                - exception class: NONE
+                - Firebase error code: NONE
+                - Firebase error message: NONE
+                - exact path: $path
+                - authenticated UID: $currentUid
+                - resolved account owner UID: $uid
+            """.trimIndent())
+        } catch (e: Exception) {
+            val errCode = if (e is com.google.firebase.database.DatabaseException && e.message?.contains("permission", ignoreCase = true) == true) {
+                "WRITE_PERMISSION_DENIED"
+            } else if (e.message?.contains("network", ignoreCase = true) == true || e.message?.contains("connection", ignoreCase = true) == true) {
+                "WRITE_NETWORK_ERROR"
+            } else if (e is com.google.firebase.FirebaseNetworkException) {
+                "WRITE_NETWORK_ERROR"
+            } else if (e.message?.contains("auth", ignoreCase = true) == true) {
+                "WRITE_AUTH_ERROR"
+            } else {
+                "WRITE_DATABASE_ERROR"
+            }
+            
+            val firebaseErrorCode = if (e is com.google.firebase.database.DatabaseException) "DATABASE_EXCEPTION" else "UNKNOWN"
+            
+            // Print error code exactly
+            android.util.Log.e(TAG, """
+                $errCode
+                - exception class: ${e.javaClass.name}
+                - Firebase error code: $firebaseErrorCode
+                - Firebase error message: ${e.message}
+                - exact path: $path
+                - authenticated UID: $currentUid
+                - resolved account owner UID: $uid
+            """.trimIndent())
+            
+            throw e
+        }
+
+        // 6. Update local sync record upon successful write
+        try {
+            val preCheck = syncRecordDao.getRecordByLocalId(tableName, localId)
+            val prePendingValue = if (preCheck?.pendingSync == true) 1 else 0
+            android.util.Log.i(TAG, "BEFORE_MARK_SYNCED pendingSync = $prePendingValue")
+
             syncRecordDao.markSynced(syncRecord.id, syncId, System.currentTimeMillis())
             LocalVersionTracker.setLocalVersion(context, tableName, syncId, proposedVersion)
+            
+            android.util.Log.i(TAG, "MARK_SYNCED_RESULT = SUCCESS")
+
+            val postCheck = syncRecordDao.getRecordByLocalId(tableName, localId)
+            val postPendingValue = if (postCheck?.pendingSync == true) 1 else 0
+            android.util.Log.i(TAG, "AFTER_MARK_SYNCED pendingSync = $postPendingValue")
+
+            android.util.Log.i(TAG, "DIAGNOSTIC - MARK_SYNCED_SUCCESS: Path: $path. Table: $tableName, Sync ID: $syncId, Local ID: $localId, Op: $opType")
+            
             println("[$TAG] Uploaded $tableName/$syncId successfully with version $proposedVersion.")
             return true
         } catch (e: Exception) {
-            println("[$TAG] Failed to upload $tableName/$syncId: ${e.message}")
+            android.util.Log.e(TAG, "MARK_SYNCED_RESULT = FAILURE")
+            android.util.Log.e(TAG, "DIAGNOSTIC - MARK_SYNCED_FAILURE: Failed to mark $tableName/$syncId as synced locally. Exception: ${e.javaClass.name} - ${e.message}")
             throw e
         }
     }
@@ -174,6 +276,9 @@ class RealtimeSyncRepository(
         if (pendingRecords.isEmpty()) return 0
 
         var successCount = 0
+        var hasNetworkOrAuthFailure = false
+        var lastTransientException: Exception? = null
+
         for (record in pendingRecords) {
             try {
                 val success = uploadRecord(record.tableName, record.localId)
@@ -184,8 +289,22 @@ class RealtimeSyncRepository(
                 }
             } catch (e: Exception) {
                 queueManager.markAsFailed(record.id, e.message ?: "Unknown error")
+                val isTransient = e.message?.contains("network", ignoreCase = true) == true || 
+                                  e.message?.contains("connection", ignoreCase = true) == true ||
+                                  e.message?.contains("timeout", ignoreCase = true) == true ||
+                                  (e is com.google.firebase.database.DatabaseException && e.message?.contains("failed", ignoreCase = true) == true)
+                if (isTransient) {
+                    hasNetworkOrAuthFailure = true
+                    lastTransientException = e
+                }
             }
         }
+
+        if (hasNetworkOrAuthFailure && lastTransientException != null) {
+            android.util.Log.w(TAG, "Queue execution encountered transient network/auth failures. Propagating to WorkManager for retry.")
+            throw lastTransientException
+        }
+
         return successCount
     }
 

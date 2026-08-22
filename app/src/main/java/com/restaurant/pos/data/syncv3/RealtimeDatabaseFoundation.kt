@@ -32,7 +32,7 @@ object RealtimeDatabaseFoundation {
      * Get the Firebase Realtime Database instance.
      */
     val database: FirebaseDatabase
-        get() = FirebaseDatabase.getInstance()
+        get() = FirebaseDatabase.getInstance("https://restaurant-pos-99d57-default-rtdb.asia-southeast1.firebasedatabase.app/")
 
     /**
      * Retrieves the current authenticated Firebase User ID.
