@@ -51,6 +51,7 @@ import java.io.File
 import com.restaurant.pos.R
 import com.restaurant.pos.data.db.CategoryEntity
 import com.restaurant.pos.data.db.MenuItemEntity
+import com.restaurant.pos.data.db.TableEntity
 import com.restaurant.pos.data.repository.CartItem
 import com.restaurant.pos.ui.theme.*
 import com.restaurant.pos.ui.viewmodel.RestaurantViewModel
@@ -81,6 +82,7 @@ fun NewOrderScreen(
     // Dropdown States
     var orderTypeDropdownExpanded by remember { mutableStateOf(false) }
     var tableDropdownExpanded by remember { mutableStateOf(false) }
+    var categoryDropdownExpanded by remember { mutableStateOf(false) }
 
     // Auto-select first available table for Dine In if not set
     LaunchedEffect(tables, orderType, selectedTableId) {
@@ -337,13 +339,23 @@ fun NewOrderScreen(
                         }
 
                         if (isDineIn) {
-                            val availableTables = tables.filter { table ->
-                                viewModel.getActiveOrderForTable(table, allOrders) == null
+                            val availableTables = remember(tables, allOrders) {
+                                tables.filter { table ->
+                                    viewModel.getActiveOrderForTable(table, allOrders) == null
+                                }.sortedWith(
+                                    compareBy<TableEntity> { table ->
+                                        Regex("\\d+").find(table.name)?.value?.toIntOrNull() ?: Int.MAX_VALUE
+                                    }.thenBy { it.name.lowercase(Locale.ROOT) }
+                                )
                             }
                             DropdownMenu(
                                 expanded = tableDropdownExpanded,
                                 onDismissRequest = { tableDropdownExpanded = false },
-                                modifier = Modifier.background(DarkSurface)
+                                modifier = Modifier
+                                    .background(DarkSurface)
+                                    .border(BorderStroke(1.dp, BorderOutline), RoundedCornerShape(12.dp))
+                                    .widthIn(min = 160.dp, max = 220.dp)
+                                    .heightIn(max = 350.dp)
                             ) {
                                 if (availableTables.isEmpty()) {
                                     DropdownMenuItem(
@@ -374,30 +386,13 @@ fun NewOrderScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // 3. Horizontal Product Category Row
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = PaddingValues(vertical = 4.dp)
+                // 3. Product Category Selector with Downward Serial Menu
+                Box(
+                    modifier = Modifier.padding(vertical = 4.dp)
                 ) {
-                    // "All" Category
-                    item(key = "all_categories", contentType = "category_badge") {
-                        val isAllSelected = selectedCategory == null
-                        CategoryItemBadge(
-                            name = stringResource(R.string.lbl_all_items),
-                            emoji = "🍽️",
-                            isSelected = isAllSelected,
-                            onClick = { selectedCategory = null }
-                        )
-                    }
-
-                    items(
-                        items = categories,
-                        key = { it.id },
-                        contentType = { "category_badge" }
-                    ) { cat ->
-                        val isSelected = selectedCategory?.id == cat.id
-                        val emoji = when (cat.iconName.lowercase(Locale.US)) {
+                    CategoryItemBadge(
+                        name = selectedCategory?.name ?: stringResource(R.string.lbl_all_items),
+                        emoji = if (selectedCategory == null) "🍽️" else when (selectedCategory?.iconName?.lowercase(Locale.US)) {
                             "burger" -> "🍔"
                             "pizza" -> "🍕"
                             "drinks" -> "🥤"
@@ -405,14 +400,126 @@ fun NewOrderScreen(
                             "chicken" -> "🍗"
                             "dessert" -> "🍨"
                             else -> "📁"
-                        }
-                        CategoryItemBadge(
-                            name = cat.name,
-                            emoji = emoji,
-                            imageUrl = cat.imageUrl,
-                            isSelected = isSelected,
-                            onClick = { selectedCategory = cat }
+                        },
+                        imageUrl = selectedCategory?.imageUrl ?: "",
+                        isSelected = true,
+                        showDropdownArrow = true,
+                        onClick = { categoryDropdownExpanded = !categoryDropdownExpanded }
+                    )
+
+                    DropdownMenu(
+                        expanded = categoryDropdownExpanded,
+                        onDismissRequest = { categoryDropdownExpanded = false },
+                        modifier = Modifier
+                            .background(DarkSurface)
+                            .border(BorderStroke(1.dp, BorderOutline), RoundedCornerShape(12.dp))
+                            .widthIn(min = 220.dp, max = 300.dp)
+                            .heightIn(max = 380.dp)
+                    ) {
+                        // "All Items" option in downward list
+                        val isAllActive = selectedCategory == null
+                        DropdownMenuItem(
+                            text = {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text("🍽️", fontSize = 16.sp)
+                                        Text(
+                                            text = stringResource(R.string.lbl_all_items),
+                                            color = if (isAllActive) BrandPrimary else TextPrimary,
+                                            fontSize = 13.sp,
+                                            fontWeight = if (isAllActive) FontWeight.Bold else FontWeight.Medium
+                                        )
+                                    }
+                                    Text(
+                                        text = "${menuItems.size}",
+                                        color = if (isAllActive) BrandPrimary else TextMuted,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            },
+                            onClick = {
+                                selectedCategory = null
+                                categoryDropdownExpanded = false
+                            },
+                            modifier = Modifier.background(if (isAllActive) BrandPrimary.copy(alpha = 0.12f) else Color.Transparent)
                         )
+
+                        HorizontalDivider(color = BorderOutline.copy(alpha = 0.5f), thickness = 0.5.dp)
+
+                        // Serial list of categories downward
+                        categories.forEach { cat ->
+                            val isCatSelected = selectedCategory?.id == cat.id
+                            val count = menuItems.count { it.categoryId == cat.id || it.categoryName.equals(cat.name, true) }
+                            val emoji = when (cat.iconName.lowercase(Locale.US)) {
+                                "burger" -> "🍔"
+                                "pizza" -> "🍕"
+                                "drinks" -> "🥤"
+                                "fries" -> "🍟"
+                                "chicken" -> "🍗"
+                                "dessert" -> "🍨"
+                                else -> "📁"
+                            }
+
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        ) {
+                                            if (cat.imageUrl.isNotBlank()) {
+                                                val imageModel = if (cat.imageUrl.startsWith("/")) File(cat.imageUrl) else cat.imageUrl
+                                                AsyncImage(
+                                                    model = ImageRequest.Builder(context)
+                                                        .data(imageModel)
+                                                        .crossfade(true)
+                                                        .build(),
+                                                    contentDescription = cat.name,
+                                                    contentScale = ContentScale.Fit,
+                                                    modifier = Modifier
+                                                        .size(18.dp)
+                                                        .clip(RoundedCornerShape(4.dp))
+                                                )
+                                            } else {
+                                                Text(emoji, fontSize = 16.sp)
+                                            }
+                                            Text(
+                                                text = cat.name,
+                                                color = if (isCatSelected) BrandPrimary else TextPrimary,
+                                                fontSize = 13.sp,
+                                                fontWeight = if (isCatSelected) FontWeight.Bold else FontWeight.Medium,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Text(
+                                            text = "$count",
+                                            color = if (isCatSelected) BrandPrimary else TextMuted,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    selectedCategory = cat
+                                    categoryDropdownExpanded = false
+                                },
+                                modifier = Modifier.background(if (isCatSelected) BrandPrimary.copy(alpha = 0.12f) else Color.Transparent)
+                            )
+                        }
                     }
                 }
 
@@ -494,6 +601,7 @@ fun CategoryItemBadge(
     emoji: String,
     imageUrl: String = "",
     isSelected: Boolean,
+    showDropdownArrow: Boolean = false,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
@@ -555,6 +663,14 @@ fun CategoryItemBadge(
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold
             )
+            if (showDropdownArrow) {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Show categories list",
+                    tint = if (isSelected) Color.White else TextSecondary,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
         }
     }
 }

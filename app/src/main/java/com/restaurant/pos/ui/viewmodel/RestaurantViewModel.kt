@@ -647,7 +647,13 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
     val allTables: StateFlow<List<TableEntity>> = currentUser.flatMapLatest { user ->
         if (user != null) {
             val accountId = user.firebaseUid ?: user.id.toString()
-            restaurantRepo.getAllTables(accountId)
+            restaurantRepo.getAllTables(accountId).map { list ->
+                list.sortedWith(
+                    compareBy<TableEntity> { table ->
+                        Regex("\\d+").find(table.name)?.value?.toIntOrNull() ?: Int.MAX_VALUE
+                    }.thenBy { it.name.lowercase(Locale.ROOT) }
+                )
+            }
         } else {
             kotlinx.coroutines.flow.flowOf(emptyList())
         }
