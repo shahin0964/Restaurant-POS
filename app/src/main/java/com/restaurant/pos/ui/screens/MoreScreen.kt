@@ -663,111 +663,115 @@ fun MoreScreen(
                 }
             }
 
-            Card(
-                colors = CardDefaults.cardColors(containerColor = DarkSurface),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onOpenStaffUsers() }
-                    .testTag("more_item_staff_users")
-            ) {
-                Row(
+            if (userRole == "administrator") {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                        .clickable { onOpenStaffUsers() }
+                        .testTag("more_item_staff_users")
                 ) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(CurrencyGold.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "👨‍💼",
-                                fontSize = 20.sp
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(CurrencyGold.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "👨‍💼",
+                                    fontSize = 20.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column {
+                                Text(
+                                    text = stringResource(R.string.more_staff),
+                                    color = TextPrimary,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = stringResource(R.string.more_staff_desc),
+                                    color = TextSecondary,
+                                    fontSize = 12.sp
+                                )
+                            }
                         }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column {
-                            Text(
-                                text = stringResource(R.string.more_staff),
-                                color = TextPrimary,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = stringResource(R.string.more_staff_desc),
-                                color = TextSecondary,
-                                fontSize = 12.sp
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = "Open",
+                            tint = TextMuted,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
-                    Icon(
-                        imageVector = Icons.Default.ChevronRight,
-                        contentDescription = "Open",
-                        tint = TextMuted,
-                        modifier = Modifier.size(20.dp)
-                    )
                 }
             }
 
-            Card(
-                colors = CardDefaults.cardColors(containerColor = DarkSurface),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onOpenStockInventory() }
-                    .testTag("more_item_stock_inventory")
-            ) {
-                Row(
+            if (userRole == "admin" || userRole == "administrator" || userRole == "manager") {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                        .clickable { onOpenStockInventory() }
+                        .testTag("more_item_stock_inventory")
                 ) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(CurrencyGold.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "📦",
-                                fontSize = 20.sp
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(CurrencyGold.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "📦",
+                                    fontSize = 20.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column {
+                                Text(
+                                    text = stringResource(R.string.more_inventory),
+                                    color = TextPrimary,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = stringResource(R.string.more_inventory_desc),
+                                    color = TextSecondary,
+                                    fontSize = 12.sp
+                                )
+                            }
                         }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column {
-                            Text(
-                                text = stringResource(R.string.more_inventory),
-                                color = TextPrimary,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = stringResource(R.string.more_inventory_desc),
-                                color = TextSecondary,
-                                fontSize = 12.sp
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = "Open",
+                            tint = TextMuted,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
-                    Icon(
-                        imageVector = Icons.Default.ChevronRight,
-                        contentDescription = "Open",
-                        tint = TextMuted,
-                        modifier = Modifier.size(20.dp)
-                    )
                 }
             }
 
@@ -879,57 +883,59 @@ fun MoreScreen(
                 }
             }
 
-            Card(
-                colors = CardDefaults.cardColors(containerColor = DarkSurface),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onOpenBackupRestore() }
-                    .testTag("more_item_backup_restore")
-            ) {
-                Row(
+            if (userRole == "administrator") {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                        .clickable { onOpenBackupRestore() }
+                        .testTag("more_item_backup_restore")
                 ) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(CurrencyGold.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "💾",
-                                fontSize = 20.sp
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(CurrencyGold.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "💾",
+                                    fontSize = 20.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column {
+                                Text(
+                                    text = stringResource(R.string.more_backup_restore),
+                                    color = TextPrimary,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = stringResource(R.string.more_backup_restore_desc),
+                                    color = TextSecondary,
+                                    fontSize = 12.sp
+                                )
+                            }
                         }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column {
-                            Text(
-                                text = stringResource(R.string.more_backup_restore),
-                                color = TextPrimary,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = stringResource(R.string.more_backup_restore_desc),
-                                color = TextSecondary,
-                                fontSize = 12.sp
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = "Open",
+                            tint = TextMuted,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
-                    Icon(
-                        imageVector = Icons.Default.ChevronRight,
-                        contentDescription = "Open",
-                        tint = TextMuted,
-                        modifier = Modifier.size(20.dp)
-                    )
                 }
             }
 

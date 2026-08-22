@@ -14,6 +14,24 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.background
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import com.restaurant.pos.data.db.UserEntity
 import com.restaurant.pos.ui.screens.*
 import com.restaurant.pos.ui.viewmodel.RestaurantViewModel
 import com.restaurant.pos.ui.viewmodel.StaffFoodViewModel
@@ -57,6 +75,7 @@ fun AppNavigation(
     navController: NavHostController = rememberNavController()
 ) {
     val language by viewModel.appLanguage.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState(initial = null)
     val rootContext = LocalContext.current
     val hostActivity = (rootContext as? android.app.Activity) ?: rootContext.findActivity()
     val localizedContext = remember(language, rootContext) {
@@ -218,15 +237,17 @@ fun AppNavigation(
         }
 
         composable(Routes.REPORTS) {
-            ReportsScreen(
-                viewModel = viewModel,
-                onNavigate = { route ->
-                    handleBottomNav(navController, route)
-                },
-                onBack = {
-                    navController.popBackStack()
-                }
-            )
+            RoleGuard(currentUser, listOf("administrator", "admin", "manager"), onBack = { navController.popBackStack() }) {
+                ReportsScreen(
+                    viewModel = viewModel,
+                    onNavigate = { route ->
+                        handleBottomNav(navController, route)
+                    },
+                    onBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
         }
 
         composable(Routes.MORE) {
@@ -308,19 +329,21 @@ fun AppNavigation(
         }
 
         composable(Routes.BUSINESS_SETTINGS) {
-            BusinessSettingsScreen(
-                viewModel = viewModel,
-                onNavigate = { route ->
-                    if (route == Routes.DISCOUNT_OFFERS || route == "discount_offers") {
-                        navController.navigate(Routes.DISCOUNT_OFFERS)
-                    } else {
-                        handleBottomNav(navController, route)
+            RoleGuard(currentUser, listOf("administrator", "admin", "manager"), onBack = { navController.popBackStack() }) {
+                BusinessSettingsScreen(
+                    viewModel = viewModel,
+                    onNavigate = { route ->
+                        if (route == Routes.DISCOUNT_OFFERS || route == "discount_offers") {
+                            navController.navigate(Routes.DISCOUNT_OFFERS)
+                        } else {
+                            handleBottomNav(navController, route)
+                        }
+                    },
+                    onBack = {
+                        navController.popBackStack()
                     }
-                },
-                onBack = {
-                    navController.popBackStack()
-                }
-            )
+                )
+            }
         }
 
         composable(Routes.DISCOUNT_OFFERS) {
@@ -371,15 +394,17 @@ fun AppNavigation(
         }
 
         composable(Routes.STAFF_USERS) {
-            StaffUsersScreen(
-                viewModel = viewModel,
-                onNavigate = { route ->
-                    handleBottomNav(navController, route)
-                },
-                onBack = {
-                    navController.popBackStack()
-                }
-            )
+            RoleGuard(currentUser, listOf("administrator"), onBack = { navController.popBackStack() }) {
+                StaffUsersScreen(
+                    viewModel = viewModel,
+                    onNavigate = { route ->
+                        handleBottomNav(navController, route)
+                    },
+                    onBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
         }
 
         composable(Routes.STOCK_INVENTORY) {
@@ -437,11 +462,13 @@ fun AppNavigation(
         }
 
         composable(Routes.BACKUP_RESTORE) {
-            BackupRestoreScreenV2(
-                onBack = {
-                    navController.popBackStack()
-                }
-            )
+            RoleGuard(currentUser, listOf("administrator"), onBack = { navController.popBackStack() }) {
+                BackupRestoreScreenV2(
+                    onBack = {
+                        navController.popBackStack()
+                    }
+                )
+            }
         }
 
         composable(Routes.PROFILE) {
@@ -519,6 +546,66 @@ private fun handleBottomNav(navController: NavHostController, route: String) {
             popUpTo(Routes.DASHBOARD) { saveState = true }
             launchSingleTop = true
             restoreState = true
+        }
+    }
+}
+
+@Composable
+fun RoleGuard(
+    currentUser: UserEntity?,
+    allowedRoles: List<String>,
+    onBack: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    val role = currentUser?.role?.lowercase()?.trim() ?: "user"
+    val allowedRolesLower = allowedRoles.map { it.lowercase().trim() }
+    val isAllowed = role == "administrator" || allowedRolesLower.contains(role)
+    if (isAllowed) {
+        content()
+    } else {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(com.restaurant.pos.ui.theme.DarkBackground)
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = com.restaurant.pos.ui.theme.DarkSurface),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().widthIn(max = 500.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Shield,
+                        contentDescription = "Access Restricted",
+                        tint = com.restaurant.pos.ui.theme.StatusCancelled,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Text(
+                        text = "Access Denied / Restricted",
+                        color = com.restaurant.pos.ui.theme.TextPrimary,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Your user role ($role) does not have authorization to view this section.",
+                        color = com.restaurant.pos.ui.theme.TextSecondary,
+                        fontSize = 14.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Button(
+                        onClick = onBack,
+                        colors = ButtonDefaults.buttonColors(containerColor = com.restaurant.pos.ui.theme.CurrencyGold, contentColor = Color.Black)
+                    ) {
+                        Text("GO BACK", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         }
     }
 }

@@ -5,6 +5,7 @@ import android.util.Log
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.UserProfileChangeRequest
+import com.google.firebase.database.FirebaseDatabase
 import com.restaurant.pos.data.db.SyncRecordDao
 import com.restaurant.pos.data.db.SyncRecordEntity
 import com.restaurant.pos.data.db.UserDao
@@ -200,6 +201,18 @@ class AuthRepository(
             val authResult = firebaseAuth.createUserWithEmailAndPassword(trimmedEmail, password).await()
             val firebaseUser = authResult.user ?: throw Exception("Registration failed, user is null")
 
+            // Create/update user profile in Firebase Realtime Database under users/{userId} node
+            val rtdb = FirebaseDatabase.getInstance("https://restaurant-pos-99d57-default-rtdb.asia-southeast1.firebasedatabase.app/")
+            val ref = rtdb.getReference("users/${firebaseUser.uid}")
+            val rtdbUserMap = mapOf(
+                "uid" to firebaseUser.uid,
+                "email" to (firebaseUser.email ?: trimmedEmail),
+                "name" to trimmedName,
+                "role" to "Administrator",
+                "createdAt" to com.google.firebase.database.ServerValue.TIMESTAMP
+            )
+            ref.setValue(rtdbUserMap).await()
+
             val profileUpdates = UserProfileChangeRequest.Builder()
                 .setDisplayName(trimmedName)
                 .build()
@@ -303,6 +316,21 @@ class AuthRepository(
                     .build()
                 createdUser.updateProfile(profileUpdates).await()
                 createdUid = createdUser.uid
+
+                // Write/save each sub-account under users/{newUid} with role, email, name, createdBy, and createdAt
+                val rtdb = FirebaseDatabase.getInstance("https://restaurant-pos-99d57-default-rtdb.asia-southeast1.firebasedatabase.app/")
+                val ref = rtdb.getReference("users/$createdUid")
+                val adminUid = firebaseAuth.currentUser?.uid ?: ""
+                val rtdbUserMap = mapOf(
+                    "uid" to createdUid,
+                    "email" to trimmedEmail,
+                    "name" to trimmedName,
+                    "role" to chosenRole.lowercase().trim(),
+                    "createdBy" to adminUid,
+                    "createdAt" to System.currentTimeMillis()
+                )
+                ref.setValue(rtdbUserMap).await()
+
             } catch (e: Exception) {
                 return Result.failure(Exception("Firebase Auth creation failed: ${e.message}"))
             } finally {
@@ -362,19 +390,43 @@ class AuthRepository(
             )
             userDao.updateUser(updatedUser)
 
+            // Update user profile in Firebase Realtime Database under users/{userId} node
+            val targetUid = targetUser.firebaseUid
+            if (!targetUid.isNullOrBlank()) {
+                try {
+                    val rtdb = FirebaseDatabase.getInstance("https://restaurant-pos-99d57-default-rtdb.asia-southeast1.firebasedatabase.app/")
+                    val updateMap = mapOf(
+                        "name" to trimmedName,
+                        "email" to trimmedEmail,
+                        "role" to finalRole.lowercase().trim(),
+                        "isActive" to finalIsActive
+                    )
+                    rtdb.getReference("users/$targetUid").updateChildren(updateMap).await()
+                } catch (ignored: Exception) {}
+            }
+
             return Result.success(updatedUser)
         }
     }
 
     suspend fun deleteStaffUser(user: UserEntity, currentUserId: Long?): Result<Boolean> {
-        // Enforce: Administrator can never be deleted
-        if (user.role.equals("Administrator", ignoreCase = true) || user.role.equals("Admin", ignoreCase = true)) {
-            return Result.failure(Exception("The Administrator account cannot be deleted."))
+        // Enforce: root Administrator can never be deleted
+        if (user.role.equals("Administrator", ignoreCase = true)) {
+            return Result.failure(Exception("The root Administrator account cannot be deleted."))
         }
 
         // Enforce: Logged-in user cannot delete self
         if (currentUserId != null && user.id == currentUserId) {
             return Result.failure(Exception("You cannot delete your own logged-in account."))
+        }
+
+        // Delete from Realtime Database under users/{userId} node
+        val targetUid = user.firebaseUid
+        if (!targetUid.isNullOrBlank()) {
+            try {
+                val rtdb = FirebaseDatabase.getInstance("https://restaurant-pos-99d57-default-rtdb.asia-southeast1.firebasedatabase.app/")
+                rtdb.getReference("users/$targetUid").removeValue().await()
+            } catch (ignored: Exception) {}
         }
 
         // Delete from local DB
