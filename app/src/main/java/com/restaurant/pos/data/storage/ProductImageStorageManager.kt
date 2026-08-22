@@ -25,9 +25,14 @@ object ProductImageStorageManager {
 
     private const val TAG = "ProductImageStorage"
     private const val STORAGE_PATH_PREFIX = "restaurant_pos/products"
+    private const val STORAGE_BUCKET_URL = "gs://restaurant-pos-99d57.firebasestorage.app"
 
     private val storage: FirebaseStorage
-        get() = FirebaseStorage.getInstance()
+        get() = try {
+            FirebaseStorage.getInstance(STORAGE_BUCKET_URL)
+        } catch (e: Exception) {
+            FirebaseStorage.getInstance()
+        }
 
     private val auth: FirebaseAuth
         get() = FirebaseAuth.getInstance()
