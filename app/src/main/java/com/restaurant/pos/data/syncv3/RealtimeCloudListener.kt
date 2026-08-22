@@ -62,8 +62,7 @@ class RealtimeCloudListener(
      * Starts listening to all 13 tables for the currently logged-in Firebase user.
      * Safely cleans up old listeners first to avoid memory leaks or cross-account contamination.
      */
-    @Synchronized
-    fun startListening() {
+    suspend fun startListening() {
         val uid = try {
             syncRepository.getAuthenticatedUid()
         } catch (e: Exception) {
@@ -72,53 +71,55 @@ class RealtimeCloudListener(
             return
         }
 
-        if (currentListeningUid == uid) {
-            Log.d(TAG, "Already listening to account UID: $uid")
-            return
-        }
-
-        // 1. If we were listening to another user, stop first
-        stopListening()
-
-        currentListeningUid = uid
-        Log.i(TAG, "Initializing real-time database listeners for account UID: $uid")
-
-        if (com.google.firebase.FirebaseApp.getApps(context).isEmpty()) {
-            Log.w(TAG, "Skipping socket-level listener registration: Default FirebaseApp is not initialized.")
-            return
-        }
-
-        val databaseInstance = FirebaseDatabase.getInstance("https://restaurant-pos-99d57-default-rtdb.asia-southeast1.firebasedatabase.app/")
-
-        for (table in tables) {
-            val path = "accounts/$uid/$table"
-            val ref = databaseInstance.getReference(path)
-
-            val childListener = object : ChildEventListener {
-                override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
-                    handleSnapshotChange(table, snapshot, uid)
-                }
-
-                override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
-                    handleSnapshotChange(table, snapshot, uid)
-                }
-
-                override fun onChildRemoved(snapshot: DataSnapshot) {
-                    // Actual deletions are handled via `isDeleted = true` tombstones within onChildAdded/onChildChanged
-                }
-
-                override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {
-                    // No-op
-                }
-
-                override fun onCancelled(error: DatabaseError) {
-                    Log.e(TAG, "Listener cancelled for node $path: ${error.message}")
-                }
+        synchronized(this) {
+            if (currentListeningUid == uid) {
+                Log.d(TAG, "Already listening to account UID: $uid")
+                return
             }
 
-            ref.addChildEventListener(childListener)
-            activeListeners[ref] = childListener
-            Log.d(TAG, "Registered ChildEventListener on path: $path")
+            // 1. If we were listening to another user, stop first
+            stopListening()
+
+            currentListeningUid = uid
+            Log.i(TAG, "Initializing real-time database listeners for account UID: $uid")
+
+            if (com.google.firebase.FirebaseApp.getApps(context).isEmpty()) {
+                Log.w(TAG, "Skipping socket-level listener registration: Default FirebaseApp is not initialized.")
+                return
+            }
+
+            val databaseInstance = FirebaseDatabase.getInstance("https://restaurant-pos-99d57-default-rtdb.asia-southeast1.firebasedatabase.app/")
+
+            for (table in tables) {
+                val path = "accounts/$uid/$table"
+                val ref = databaseInstance.getReference(path)
+
+                val childListener = object : ChildEventListener {
+                    override fun onChildAdded(snapshot: DataSnapshot, previousChildName: String?) {
+                        handleSnapshotChange(table, snapshot, uid)
+                    }
+
+                    override fun onChildChanged(snapshot: DataSnapshot, previousChildName: String?) {
+                        handleSnapshotChange(table, snapshot, uid)
+                    }
+
+                    override fun onChildRemoved(snapshot: DataSnapshot) {
+                        // Actual deletions are handled via `isDeleted = true` tombstones within onChildAdded/onChildChanged
+                    }
+
+                    override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {
+                        // No-op
+                    }
+
+                    override fun onCancelled(error: DatabaseError) {
+                        Log.e(TAG, "Listener cancelled for node $path: ${error.message}")
+                    }
+                }
+
+                ref.addChildEventListener(childListener)
+                activeListeners[ref] = childListener
+                Log.d(TAG, "Registered ChildEventListener on path: $path")
+            }
         }
     }
 
@@ -193,7 +194,14 @@ class RealtimeCloudListener(
         if (parentRecord == null) {
             // Parent doesn't exist locally! Fetch and reconcile it first
             val path = "accounts/$uid/$parentTable/$parentSyncId"
-            val parentCloudMap = firebaseProxy.getRecord(path)
+            val parentCloudMap = try {
+                withTimeout(10000L) {
+                    firebaseProxy.getRecord(path)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Timeout or error fetching parent record $path: ${e.message}")
+                null
+            }
             if (parentCloudMap != null) {
                 // Recursively ensure any grandparent records exist first
                 val cleanParentMap = parentCloudMap.filterValues { it != null } as Map<String, Any>

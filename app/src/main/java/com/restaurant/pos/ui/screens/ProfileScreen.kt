@@ -48,6 +48,8 @@ fun ProfileScreen(
     val isOnline by viewModel.isOnline.collectAsState()
     val pendingCount by viewModel.pendingSyncCount.collectAsState()
     val lastSyncLong by viewModel.lastSyncTime.collectAsState()
+    val isSyncActive by viewModel.isSyncActive.collectAsState()
+    val lastSyncError by viewModel.lastSyncError.collectAsState()
 
     var showChangePasswordDialog by remember { mutableStateOf(false) }
 
@@ -178,58 +180,78 @@ fun ProfileScreen(
                         .border(1.dp, BorderOutline, RoundedCornerShape(12.dp))
                         .testTag("profile_sync_card")
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = "Sync Status",
-                                tint = if (isOnline) {
-                                    if (pendingCount > 0) StatusPending else StatusCompleted
-                                } else {
-                                    TextMuted
-                                },
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = "Sync Status",
-                                color = TextPrimary,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        // Status pill
-                        val (statusText, statusColor) = when {
-                            !isOnline -> "Offline" to StatusCancelled
-                            pendingCount > 0 -> "Syncing..." to StatusPending
-                            else -> "Synced" to StatusCompleted
-                        }
-
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            if (isOnline && pendingCount == 0) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = "Synced",
-                                    tint = statusColor,
-                                    modifier = Modifier.size(16.dp)
+                                    contentDescription = "Sync Status",
+                                    tint = if (isOnline) {
+                                        if (isSyncActive) StatusPending
+                                        else if (!lastSyncError.isNullOrBlank()) StatusCancelled
+                                        else if (pendingCount > 0) StatusPending
+                                        else StatusCompleted
+                                    } else {
+                                        TextMuted
+                                    },
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "Sync Status",
+                                    color = TextPrimary,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
+
+                            // Status pill
+                            val (statusText, statusColor) = when {
+                                !isOnline -> "Offline" to StatusCancelled
+                                isSyncActive -> "Syncing..." to StatusPending
+                                !lastSyncError.isNullOrBlank() -> "Sync Failed" to StatusCancelled
+                                pendingCount > 0 -> "Backup Pending" to StatusPending
+                                else -> "Synced" to StatusCompleted
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                if (isOnline && pendingCount == 0 && lastSyncError.isNullOrBlank() && !isSyncActive) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = "Synced",
+                                        tint = statusColor,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                Text(
+                                    text = statusText,
+                                    color = statusColor,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.testTag("profile_sync_status_badge")
+                                )
+                            }
+                        }
+
+                        if (isOnline && !lastSyncError.isNullOrBlank()) {
+                            HorizontalDivider(color = BorderOutline, thickness = 1.dp)
                             Text(
-                                text = statusText,
-                                color = statusColor,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.testTag("profile_sync_status_badge")
+                                text = lastSyncError ?: "",
+                                color = StatusCancelled,
+                                fontSize = 13.sp,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                                    .testTag("profile_sync_error_msg")
                             )
                         }
                     }

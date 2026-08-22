@@ -41,20 +41,30 @@ class AuthRepository(
             null
         } ?: return null
 
+        val defaultPerms = com.restaurant.pos.data.model.AppPermission.allKeys().joinToString(",")
+
         // Check if there is already a local user matching this Firebase UID or Email
-        var localUser = userDao.getUserByFirebaseUid(fbUser.uid)
+        val localUser = userDao.getUserByFirebaseUid(fbUser.uid)
             ?: (if (!fbUser.email.isNullOrBlank()) userDao.getUserByEmailOrPhone(fbUser.email!!) else null)
 
         if (localUser != null) {
+            val updatedUser = localUser.copy(
+                role = "Administrator",
+                isActive = true,
+                permissions = defaultPerms,
+                isCurrentSession = true,
+                firebaseUid = fbUser.uid
+            )
+            userDao.updateUser(updatedUser)
             if (!localUser.isCurrentSession) {
                 userDao.clearCurrentSessions()
                 userDao.setCurrentSession(localUser.id)
             }
-            return localUser.copy(isCurrentSession = true)
+            updateSyncRecordWithUid(updatedUser.id, fbUser.uid)
+            return updatedUser
         }
 
         // If local user is missing but Firebase session is valid, construct local user immediately and sync in background
-        val defaultPerms = com.restaurant.pos.data.model.AppPermission.allKeys().joinToString(",")
         val newUser = UserEntity(
             emailOrPhone = fbUser.email ?: "",
             name = fbUser.displayName ?: "User",
@@ -69,6 +79,7 @@ class AuthRepository(
         userDao.clearCurrentSessions()
         userDao.setCurrentSession(newId)
         val savedUser = newUser.copy(id = newId)
+        updateSyncRecordWithUid(savedUser.id, fbUser.uid)
 
         return savedUser
     }
@@ -89,11 +100,11 @@ class AuthRepository(
             val authResult = firebaseAuth.signInWithEmailAndPassword(trimmedEmail, password).await()
             val firebaseUser = authResult.user ?: throw Exception("Authentication failed, user is null")
 
+            val defaultPerms = com.restaurant.pos.data.model.AppPermission.allKeys().joinToString(",")
             var localUser = userDao.getUserByFirebaseUid(firebaseUser.uid)
                 ?: userDao.getUserByEmailOrPhone(firebaseUser.email ?: trimmedEmail)
 
             if (localUser == null) {
-                val defaultPerms = com.restaurant.pos.data.model.AppPermission.allKeys().joinToString(",")
                 localUser = UserEntity(
                     emailOrPhone = firebaseUser.email ?: trimmedEmail,
                     name = firebaseUser.displayName ?: "User",
@@ -107,14 +118,12 @@ class AuthRepository(
                 val newId = userDao.insertUser(localUser)
                 localUser = localUser.copy(id = newId)
             } else {
-                if (!localUser.isActive) {
-                    firebaseAuth.signOut()
-                    return Result.failure(Exception("This staff account is inactive. Please contact your Administrator."))
-                }
                 localUser = localUser.copy(
+                    role = "Administrator",
+                    isActive = true,
+                    permissions = defaultPerms,
                     firebaseUid = firebaseUser.uid,
-                    isCurrentSession = true,
-                    isActive = true
+                    isCurrentSession = true
                 )
                 userDao.updateUser(localUser)
             }
@@ -140,11 +149,11 @@ class AuthRepository(
             val email = firebaseUser.email ?: throw Exception("Google account must have an email")
             val displayName = firebaseUser.displayName ?: "Google User"
 
+            val defaultPerms = com.restaurant.pos.data.model.AppPermission.allKeys().joinToString(",")
             var localUser = userDao.getUserByFirebaseUid(firebaseUser.uid)
                 ?: userDao.getUserByEmailOrPhone(email)
 
             if (localUser == null) {
-                val defaultPerms = com.restaurant.pos.data.model.AppPermission.allKeys().joinToString(",")
                 localUser = UserEntity(
                     emailOrPhone = email,
                     name = displayName,
@@ -158,15 +167,13 @@ class AuthRepository(
                 val newId = userDao.insertUser(localUser)
                 localUser = localUser.copy(id = newId)
             } else {
-                if (!localUser.isActive) {
-                    firebaseAuth.signOut()
-                    return Result.failure(Exception("This staff account is inactive. Please contact your Administrator."))
-                }
                 localUser = localUser.copy(
                     name = displayName.ifBlank { localUser.name },
+                    role = "Administrator",
+                    isActive = true,
+                    permissions = defaultPerms,
                     firebaseUid = firebaseUser.uid,
-                    isCurrentSession = true,
-                    isActive = true
+                    isCurrentSession = true
                 )
                 userDao.updateUser(localUser)
             }
@@ -187,8 +194,8 @@ class AuthRepository(
         val trimmedEmail = emailOrPhone.trim()
         val trimmedName = name.trim()
         return try {
-            // Determine role before creating: All signups are Administrator by default
             val role = "Administrator"
+            val defaultPerms = com.restaurant.pos.data.model.AppPermission.allKeys().joinToString(",")
 
             val authResult = firebaseAuth.createUserWithEmailAndPassword(trimmedEmail, password).await()
             val firebaseUser = authResult.user ?: throw Exception("Registration failed, user is null")
@@ -206,9 +213,10 @@ class AuthRepository(
                     name = trimmedName,
                     passwordHash = "",
                     firebaseUid = firebaseUser.uid,
-                    role = if (existingLocalUser.role.equals("Administrator", ignoreCase = true)) "Administrator" else role,
+                    role = "Administrator",
                     isCurrentSession = true,
-                    isActive = true
+                    isActive = true,
+                    permissions = defaultPerms
                 )
                 userDao.updateUser(updated)
                 updated
@@ -220,7 +228,8 @@ class AuthRepository(
                     passwordHash = "",
                     firebaseUid = firebaseUser.uid,
                     isCurrentSession = true,
-                    isActive = true
+                    isActive = true,
+                    permissions = defaultPerms
                 )
                 val id = userDao.insertUser(newUser)
                 newUser.copy(id = id)

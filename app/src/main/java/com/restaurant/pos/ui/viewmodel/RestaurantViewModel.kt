@@ -2,6 +2,7 @@ package com.restaurant.pos.ui.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.content.SharedPreferences
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -19,6 +20,25 @@ import org.json.JSONObject
 class RestaurantViewModel(application: Application) : AndroidViewModel(application) {
 
     private val sharedPrefs = application.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+    private val syncPrefs = application.getSharedPreferences("pos_sync_prefs", Context.MODE_PRIVATE)
+
+    private val _isSyncActive = MutableStateFlow(syncPrefs.getBoolean("sync_active", false))
+    val isSyncActive: StateFlow<Boolean> = _isSyncActive.asStateFlow()
+
+    private val _lastSyncError = MutableStateFlow(syncPrefs.getString("sync_error", null))
+    val lastSyncError: StateFlow<String?> = _lastSyncError.asStateFlow()
+
+    private val syncPrefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        when (key) {
+            "sync_active" -> {
+                _isSyncActive.value = syncPrefs.getBoolean("sync_active", false)
+            }
+            "sync_error" -> {
+                _lastSyncError.value = syncPrefs.getString("sync_error", null)
+            }
+        }
+    }
+
     private val _appLanguage = MutableStateFlow(sharedPrefs.getString("language", "en") ?: "en")
     val appLanguage: StateFlow<String> = _appLanguage.asStateFlow()
 
@@ -831,6 +851,7 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
     val updateInfo: StateFlow<UpdateInfo?> = _updateInfo.asStateFlow()
 
     init {
+        syncPrefs.registerOnSharedPreferenceChangeListener(syncPrefsListener)
         viewModelScope.launch {
             authRepo.restoreSessionIfNeeded()
             authRepo.seedDefaultUserIfNeeded()
@@ -1093,5 +1114,10 @@ class RestaurantViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             authRepo.logout()
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        syncPrefs.unregisterOnSharedPreferenceChangeListener(syncPrefsListener)
     }
 }

@@ -7,6 +7,8 @@ import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.ServerValue
 import com.restaurant.pos.data.db.*
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
+import androidx.room.withTransaction
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -23,9 +25,10 @@ interface FirebaseDatabaseProxy {
 }
 
 class RealtimeFirebaseProxy : FirebaseDatabaseProxy {
-    override suspend fun getRecord(path: String): Map<String, Any?>? = suspendCancellableCoroutine { continuation ->
-        com.google.firebase.database.FirebaseDatabase.getInstance("https://restaurant-pos-99d57-default-rtdb.asia-southeast1.firebasedatabase.app/").getReference(path)
-            .addListenerForSingleValueEvent(object : com.google.firebase.database.ValueEventListener {
+    override suspend fun getRecord(path: String): Map<String, Any?>? = kotlinx.coroutines.withTimeoutOrNull(5000L) {
+        suspendCancellableCoroutine { continuation ->
+            val ref = com.google.firebase.database.FirebaseDatabase.getInstance("https://restaurant-pos-99d57-default-rtdb.asia-southeast1.firebasedatabase.app/").getReference(path)
+            val listener = object : com.google.firebase.database.ValueEventListener {
                 override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
                     if (snapshot.exists()) {
                         continuation.resume(snapshot.value as? Map<String, Any?>)
@@ -36,12 +39,18 @@ class RealtimeFirebaseProxy : FirebaseDatabaseProxy {
                 override fun onCancelled(error: com.google.firebase.database.DatabaseError) {
                     continuation.resumeWithException(error.toException())
                 }
-            })
+            }
+            ref.addListenerForSingleValueEvent(listener)
+            continuation.invokeOnCancellation {
+                ref.removeEventListener(listener)
+            }
+        }
     }
 
-    override suspend fun getTableRecords(path: String): List<Map<String, Any?>> = suspendCancellableCoroutine { continuation ->
-        com.google.firebase.database.FirebaseDatabase.getInstance("https://restaurant-pos-99d57-default-rtdb.asia-southeast1.firebasedatabase.app/").getReference(path)
-            .addListenerForSingleValueEvent(object : com.google.firebase.database.ValueEventListener {
+    override suspend fun getTableRecords(path: String): List<Map<String, Any?>> = kotlinx.coroutines.withTimeoutOrNull(10000L) {
+        suspendCancellableCoroutine { continuation ->
+            val ref = com.google.firebase.database.FirebaseDatabase.getInstance("https://restaurant-pos-99d57-default-rtdb.asia-southeast1.firebasedatabase.app/").getReference(path)
+            val listener = object : com.google.firebase.database.ValueEventListener {
                 override fun onDataChange(snapshot: com.google.firebase.database.DataSnapshot) {
                     val results = mutableListOf<Map<String, Any?>>()
                     if (snapshot.exists()) {
@@ -57,18 +66,26 @@ class RealtimeFirebaseProxy : FirebaseDatabaseProxy {
                 override fun onCancelled(error: com.google.firebase.database.DatabaseError) {
                     continuation.resumeWithException(error.toException())
                 }
-            })
-    }
-
-    override suspend fun setRecord(path: String, data: Map<String, Any?>): Unit = suspendCancellableCoroutine { continuation ->
-        com.google.firebase.database.FirebaseDatabase.getInstance("https://restaurant-pos-99d57-default-rtdb.asia-southeast1.firebasedatabase.app/").getReference(path).setValue(data)
-            .addOnCompleteListener { task ->
-                if (task.isSuccessful) {
-                    continuation.resume(Unit)
-                } else {
-                    continuation.resumeWithException(task.exception ?: RuntimeException("Firebase write failed"))
-                }
             }
+            ref.addListenerForSingleValueEvent(listener)
+            continuation.invokeOnCancellation {
+                ref.removeEventListener(listener)
+            }
+        }
+    } ?: emptyList()
+
+    override suspend fun setRecord(path: String, data: Map<String, Any?>): Unit = kotlinx.coroutines.withTimeout(7000L) {
+        suspendCancellableCoroutine { continuation ->
+            val ref = com.google.firebase.database.FirebaseDatabase.getInstance("https://restaurant-pos-99d57-default-rtdb.asia-southeast1.firebasedatabase.app/").getReference(path)
+            ref.setValue(data)
+                .addOnCompleteListener { task ->
+                    if (task.isSuccessful) {
+                        continuation.resume(Unit)
+                    } else {
+                        continuation.resumeWithException(task.exception ?: RuntimeException("Firebase write failed"))
+                    }
+                }
+        }
     }
 }
 
@@ -97,14 +114,12 @@ class RealtimeSyncRepository(
      * Checks if Firebase authentication session is active. Returns the UID.
      * Throws IllegalStateException if not authenticated, keeping operations isolated.
      */
-    fun getAuthenticatedUid(): String {
+    suspend fun getAuthenticatedUid(): String {
         val currentUid = getUid()
-        val adminUid = kotlinx.coroutines.runBlocking {
-            try {
-                database.userDao().getAdministrator()?.firebaseUid
-            } catch (e: Exception) {
-                null
-            }
+        val adminUid = try {
+            database.userDao().getAdministrator()?.firebaseUid
+        } catch (e: Exception) {
+            null
         }
         val resolvedUid = if (!adminUid.isNullOrBlank()) adminUid else currentUid
         android.util.Log.i(TAG, "getAuthenticatedUid: resolved currentUid=$currentUid, adminUid=$adminUid -> resolvedUid=$resolvedUid")
@@ -156,7 +171,9 @@ class RealtimeSyncRepository(
         var cloudMap: Map<String, Any?>? = null
         try {
             android.util.Log.i(TAG, "STEP_6_GET_RECORD_STARTED: Path: $path")
-            cloudMap = firebaseProxy.getRecord(path)
+            cloudMap = withTimeout(10000L) {
+                firebaseProxy.getRecord(path)
+            }
             android.util.Log.i(TAG, "STEP_6_GET_RECORD_SUCCESS: Path: $path")
         } catch (e: Exception) {
             android.util.Log.e(TAG, "STEP_6_GET_RECORD_FAILED: Path: $path. Exception: ${e.javaClass.name} - ${e.message}")
@@ -200,7 +217,9 @@ class RealtimeSyncRepository(
         // 5. Write to RTDB under /accounts/{uid}/{tableName}/{syncId}
         try {
             android.util.Log.i(TAG, "STEP_8_FIREBASE_WRITE_STARTED: Path: $path")
-            firebaseProxy.setRecord(path, uploadMap)
+            withTimeout(10000L) {
+                firebaseProxy.setRecord(path, uploadMap)
+            }
             
             // Print WRITE_SUCCESS explicitly
             android.util.Log.i(TAG, """
@@ -267,6 +286,34 @@ class RealtimeSyncRepository(
         }
     }
 
+    private fun handleSyncException(e: Exception) {
+        val prefs = context.getSharedPreferences("pos_sync_prefs", Context.MODE_PRIVATE)
+        val msg = e.message ?: ""
+        val errorMsg = when {
+            e is kotlinx.coroutines.TimeoutCancellationException ||
+            msg.contains("timeout", ignoreCase = true) ||
+            msg.contains("timed out", ignoreCase = true) -> {
+                "Network timeout during upload. Sync will retry automatically."
+            }
+            msg.contains("permission_denied", ignoreCase = true) ||
+            msg.contains("permission denied", ignoreCase = true) ||
+            msg.contains("denied", ignoreCase = true) -> {
+                "Permission denied: Database security rules violation."
+            }
+            msg.contains("auth", ignoreCase = true) ||
+            msg.contains("authenticated", ignoreCase = true) ||
+            msg.contains("unauthorized", ignoreCase = true) ||
+            msg.contains("token", ignoreCase = true) -> {
+                "Authentication error. Please re-login."
+            }
+            else -> {
+                "Sync failed: ${e.message ?: "Unknown error"}"
+            }
+        }
+        android.util.Log.e(TAG, "Sync exception classified: $errorMsg", e)
+        prefs.edit().putString("sync_error", errorMsg).apply()
+    }
+
     /**
      * Processes the pending queue in relationships order.
      */
@@ -288,10 +335,12 @@ class RealtimeSyncRepository(
                     queueManager.markAsFailed(record.id, "Conflict or unable to map record.")
                 }
             } catch (e: Exception) {
+                handleSyncException(e)
                 queueManager.markAsFailed(record.id, e.message ?: "Unknown error")
                 val isTransient = e.message?.contains("network", ignoreCase = true) == true || 
                                   e.message?.contains("connection", ignoreCase = true) == true ||
                                   e.message?.contains("timeout", ignoreCase = true) == true ||
+                                  e is kotlinx.coroutines.TimeoutCancellationException ||
                                   (e is com.google.firebase.database.DatabaseException && e.message?.contains("failed", ignoreCase = true) == true)
                 if (isTransient) {
                     hasNetworkOrAuthFailure = true
@@ -351,43 +400,52 @@ class RealtimeSyncRepository(
         // Handle deletions (tombstones)
         if (isDeleted) {
             if (localId > 0L) {
-                deleteLocalEntity(tableName, localId)
-                val postDeleteSyncRecord = syncRecordDao.getRecordByLocalId(tableName, localId)
-                val finalSyncRecord = SyncRecordEntity(
-                    id = postDeleteSyncRecord?.id ?: existingSyncRecord?.id ?: 0,
-                    tableName = tableName,
-                    localId = localId,
-                    firestoreId = syncId,
-                    lastSyncTime = cloudLastChanged,
-                    pendingSync = false,
-                    operation = "DELETE",
-                    isDeleted = true
-                )
-                syncRecordDao.insertOrUpdate(finalSyncRecord)
-                LocalVersionTracker.setLocalVersion(context, tableName, syncId, cloudVersion)
+                try {
+                    database.withTransaction {
+                        deleteLocalEntity(tableName, localId)
+                        val postDeleteSyncRecord = syncRecordDao.getRecordByLocalId(tableName, localId)
+                        val finalSyncRecord = SyncRecordEntity(
+                            id = postDeleteSyncRecord?.id ?: existingSyncRecord?.id ?: 0,
+                            tableName = tableName,
+                            localId = localId,
+                            firestoreId = syncId,
+                            lastSyncTime = cloudLastChanged,
+                            pendingSync = false,
+                            operation = "DELETE",
+                            isDeleted = true
+                        )
+                        syncRecordDao.insertOrUpdate(finalSyncRecord)
+                        LocalVersionTracker.setLocalVersion(context, tableName, syncId, cloudVersion)
+                    }
+                } catch (e: Exception) {
+                    println("[$TAG] Error deleting reconciled $tableName/$syncId: ${e.message}")
+                    return false
+                }
             }
             return true
         }
 
         // Resolve and map model back to local entity, then write to Room
         try {
-            val resolvedLocalId = writeCloudModelToRoom(tableName, localId, cloudMap)
-            if (resolvedLocalId > 0L) {
-                // Upsert sync_records reference safely
-                val syncRecord = SyncRecordEntity(
-                    id = existingSyncRecord?.id ?: 0,
-                    tableName = tableName,
-                    localId = resolvedLocalId,
-                    firestoreId = syncId,
-                    lastSyncTime = cloudLastChanged,
-                    pendingSync = false,
-                    operation = "UPDATE",
-                    isDeleted = false
-                )
-                syncRecordDao.insertOrUpdate(syncRecord)
-                LocalVersionTracker.setLocalVersion(context, tableName, syncId, cloudVersion)
-                return true
+            database.withTransaction {
+                val resolvedLocalId = writeCloudModelToRoom(tableName, localId, cloudMap)
+                if (resolvedLocalId > 0L) {
+                    // Upsert sync_records reference safely
+                    val syncRecord = SyncRecordEntity(
+                        id = existingSyncRecord?.id ?: 0,
+                        tableName = tableName,
+                        localId = resolvedLocalId,
+                        firestoreId = syncId,
+                        lastSyncTime = cloudLastChanged,
+                        pendingSync = false,
+                        operation = "UPDATE",
+                        isDeleted = false
+                    )
+                    syncRecordDao.insertOrUpdate(syncRecord)
+                    LocalVersionTracker.setLocalVersion(context, tableName, syncId, cloudVersion)
+                }
             }
+            return true
         } catch (e: Exception) {
             println("[$TAG] Error reconciling $tableName/$syncId: ${e.message}")
         }
